@@ -1,15 +1,13 @@
 const MACULA_RADIUS_MM = 2.75;
+const MACULAR_HOLE_RADIUS_MM = 0.4;
 const DISC_FOVEA_MM = 4.5;
 const ARCADE_FOVEA_MM = 4.0;
 const DISC_RADIUS_MM = 0.75;
 
 /**
- * Optional ora serrata, vitreous base, and ciliary ring.
+ * Optional landmarks: geometric equator, vitreous base, and pars plana.
  */
 const SHOW_ORA = true;
-const ORA_NASAL_MM_AT_24 = 17.5;
-const ORA_TEMPORAL_MM_AT_24 = 18.75;
-const ORA_MM_PER_AL = 0.16;
 const AL_MIN_MM = 22.3;
 const AL_MAX_MM = 28.5;
 const RHO_AQUEOUS = 1000;
@@ -26,21 +24,39 @@ const MMHG_PER_MM_HEIGHT = (RHO_AQUEOUS * G_M_S2 * 0.001) / PA_PER_MMHG;
  * 1. Cavity is an Atchison retinal ellipsoid clipped by a Navarro posterior
  *    lens (phakic) or a planar cap (pseudophakic). Occupying volume is the
  *    given mL (no Boyle / IOP).
- * 2. Static, axisymmetric about gravity; bubble sits at the zenith.
+ * 2. Static, axisymmetric about gravity through the highest point of the
+ *    cavity (Atchison tilt/decentration), not the visual-axis origin.
  * 3. One gas–aqueous interface: σ κ = ΔP₀ + Δρ g z.
  * 4. Apex is horizontal and is the lowest point of the interface.
  * 5. Young angle through the cavity liquid at the retina (depends on fluid).
  * 6. Gas–liquid σ from the cavity fluid (vitreous ~61, aqueous ~65, BSS ~72 mN/m).
  *    Gases are isoexpansile mixes (air 100%, SF₆ 20%, C₃F₈ 14%).
  *    Mixture density is ρ = f ρ_pure + (1−f) ρ_air; Δρ = 1000 − ρ.
+ *    Concentration f is set in the UI (isoexpansile defaults: SF₆ 20%, C₃F₈ 14%).
  * 7. One gravity Young–Laplace solve at every fill: σ κ = ΔP₀ + Δρ g z
- *    with Young angle at the retina, and a second solve for lens/IOL θ
- *    where the interface meets the capsule. The meridian is traced to the
- *    real cavity wall (not a sphere then clamped).
- * 8. The YL meridian is shifted so voxel volume inside the clipped cavity
+ *    with the same Young angle on retina, capsule, and IOL. The meridian
+ *    is traced to the real cavity wall (not a sphere then clamped).
+ * 8. Optional 360° encircling buckle (style 41 or 42). The indent is a
+ *    rectangular trough of the band’s listed width and thickness, with a
+ *    short roll at each edge. No extra cinch. The meniscus is a smooth
+ *    Young–Laplace surface on the unbuckled ellipsoid and the planar lens
+ *    opening; it does not follow the capsule sag or buckle fillets.
+ *    A tear on the crest or in a buckle gutter is tamponaded if it is on
+ *    the gas side of the meniscus (little exchange in the gutter). Center
+ *    defaults to the posterior vitreous base, or can sit at the equator or
+ *    on the retinal break.
+ * 9. The YL meridian is shifted so voxel volume inside the clipped cavity
  *    matches the occupying mL.
- * 9. Tamponade if the break is in the cavity and on the gas side of that meniscus.
- * 10. On gas-contact retina, ΔP = σ κ₀ + Δρ g (z − z_apex); else 0.
+ * 10. Tamponade if the break is in the cavity and on the gas side of that meniscus.
+ * 11. On gas-contact retina, ΔP = σ κ₀ + Δρ g (z − z_apex); else 0.
+ * 12. Bubble planner: occupying mL is day-0 volume. Mixes above isoexpansile
+ *    expand (100% SF₆ ≈ 2×, 100% C₃F₈ ≈ 4×). After the peak, volume follows
+ *    a power-law fade V = Vpeak · (1 − t/T)^p with p ≈ 1.18, so remaining
+ *    millilitres hit zero in finite time (not an exponential tail). T is
+ *    ~7 weeks for a full 14% C₃F₈ fill (~⅓ left at 1 month) and a little
+ *    shorter for smaller starting fills (gone 6–7 weeks). Mix and lens
+ *    still change T. Volume is clipped at the cavity; IOP is not modeled.
+ *    Oil does not absorb here.
  */
 const GAS_MODEL = {
   kind: "gas",
@@ -129,20 +145,24 @@ const TAMPONADES = {
 
 function mixtureDensityKgM3(listed) {
   if (listed.kind !== "gas") return listed.densityKgM3;
-  const frac = clamp((listed.isoexpansilePct ?? 100) / 100, 0, 1);
+  const frac = clamp((listed.concPct ?? listed.isoexpansilePct ?? 100) / 100, 0, 1);
   const pure = listed.pureDensityKgM3 ?? AIR_DENSITY_KG_M3;
   return frac * pure + (1 - frac) * AIR_DENSITY_KG_M3;
 }
 
-function tamponadeProps(id, cavityFluidId) {
+function tamponadeProps(id, cavityFluidId, concPct) {
   const listed = TAMPONADES[id] || TAMPONADES.sf6;
   const cavity = CAVITY_FLUIDS[cavityFluidId] || CAVITY_FLUIDS.vitreous;
-  const densityKgM3 = listed.kind === "gas" ? mixtureDensityKgM3(listed) : listed.densityKgM3;
+  const pct = listed.kind === "oil" || listed.id === "air"
+    ? 100
+    : clamp(Number(concPct ?? listed.isoexpansilePct), 10, 100);
+  const withConc = { ...listed, concPct: pct };
+  const densityKgM3 = listed.kind === "gas" ? mixtureDensityKgM3(withConc) : listed.densityKgM3;
   const sigmaNM = listed.kind === "gas" ? cavity.sigmaGasNM : cavity.sigmaOilNM;
   const thetaDeg = listed.kind === "gas" ? cavity.thetaGasDeg : cavity.thetaOilDeg;
   const raw = listed.kind === "gas"
-    ? { ...listed, ...GAS_MODEL, id: listed.id, name: listed.name, densityKgM3, sigmaNM, thetaDeg }
-    : { ...listed, densityKgM3, sigmaNM, thetaDeg };
+    ? { ...listed, ...GAS_MODEL, id: listed.id, name: listed.name, densityKgM3, sigmaNM, thetaDeg, concPct: pct }
+    : { ...listed, densityKgM3, sigmaNM, thetaDeg, concPct: pct };
   const deltaRho = Math.max(RHO_AQUEOUS - raw.densityKgM3, 1);
   const sigma = raw.sigmaNM;
   return {
@@ -150,13 +170,220 @@ function tamponadeProps(id, cavityFluidId) {
     cavityFluid: cavity,
     deltaRho,
     thetaAqueousRad: (raw.thetaDeg * Math.PI) / 180,
-    thetaLensDeg: raw.kind === "oil" ? 30 : THETA_LENS_PHAKIC_DEG,
-    thetaLensRad: ((raw.kind === "oil" ? 30 : THETA_LENS_PHAKIC_DEG) * Math.PI) / 180,
+    thetaLensDeg: thetaDeg,
+    thetaLensRad: (thetaDeg * Math.PI) / 180,
     rhoGOverSigmaPerMm2: (deltaRho * G_M_S2 / sigma) / 1e6,
     capillaryMm: Math.sqrt(sigma / (deltaRho * G_M_S2)) * 1000,
     laplaceMmHgPerKappa: (sigma * 1000) / PA_PER_MMHG,
     mmHgPerMmHeight: (deltaRho * G_M_S2 * 0.001) / PA_PER_MMHG,
   };
+}
+
+/**
+ * Expansion from isoexpansile (net ×1) to the pure-gas maximum.
+ * Absorption is a power-law fade to a finite gone-date, not exponential:
+ * V(t) = Vpeak · (1 − (t − tPeak) / T)^p, p = 1.18. That is gentler than a
+ * late cliff and unlike first-order decay it actually reaches zero. T ≈ 49 d
+ * for a full 14% C₃F₈ phakic fill (~⅓ remaining at 1 month; Thompson 1997
+ * 16% still ~60% at 2 weeks). Smaller starting fills use a slightly shorter
+ * T so they are gone by 6–7 weeks. Relative T across mix and lens follows
+ * the Thompson-shaped half-life table. Air ~7 d, SF₆ ~16 d phakic.
+ */
+const PLANNER_MAX_DAYS = 56;
+const PLANNER_GONE_ML = 0.02;
+const ABSORB_POWER = 1.18;
+const C3F8_FULL_GONE_DAYS = 49;
+const ABSORB_SIZE_EXP = 0.08;
+const GAS_KINETICS = {
+  air: {
+    id: "air",
+    Emax: 1,
+    isoPct: 100,
+    tPeak100Days: 0,
+    halfLifePhakic: 1.6,
+    halfLifePseudo: 0.9,
+  },
+  sf6: {
+    id: "sf6",
+    Emax: 2,
+    isoPct: 20,
+    tPeak100Days: 1.5,
+    halfLifePhakic: [[0, 1.6], [20, 2.8], [100, 2.8]],
+    halfLifePseudo: [[0, 0.9], [20, 2.4], [100, 2.4]],
+  },
+  c3f8: {
+    id: "c3f8",
+    Emax: 4,
+    isoPct: 14,
+    tPeak100Days: 3.5,
+    halfLifePhakic: [[0, 1.6], [5, 10.3], [10, 16.0], [15, 19.7], [20, 26.0], [100, 26.0]],
+    halfLifePseudo: [[0, 0.9], [5, 7.8], [10, 12.1], [15, 14.8], [20, 19.6], [100, 19.6]],
+  },
+};
+
+function lerpHalfLifeTable(table, pct) {
+  if (typeof table === "number") return table;
+  if (!table || !table.length) return 0;
+  const x = clamp(Number(pct) || 0, 0, 100);
+  if (x <= table[0][0]) return table[0][1];
+  for (let i = 1; i < table.length; i += 1) {
+    if (x <= table[i][0]) {
+      const x0 = table[i - 1][0];
+      const y0 = table[i - 1][1];
+      const x1 = table[i][0];
+      const y1 = table[i][1];
+      const u = (x - x0) / Math.max(x1 - x0, 1e-9);
+      return y0 + u * (y1 - y0);
+    }
+  }
+  return table[table.length - 1][1];
+}
+
+function absorptionHalfLifeDays(id, concPct, lens) {
+  const listed = TAMPONADES[id] || TAMPONADES.sf6;
+  if (listed.kind === "oil") return Infinity;
+  const kin = GAS_KINETICS[listed.id] || GAS_KINETICS.air;
+  const table = lens === "pseudo" ? kin.halfLifePseudo : kin.halfLifePhakic;
+  const pct = listed.id === "air" ? 100 : clamp(Number(concPct ?? kin.isoPct), 0, 100);
+  return lerpHalfLifeTable(table, pct);
+}
+
+function absorbSpanDays(course, vPeak, cavityMl) {
+  const hl = course.halfLifeDays;
+  if (!Number.isFinite(hl) || hl <= 0) return Infinity;
+  const hl14 = absorptionHalfLifeDays("c3f8", 14, "phakic");
+  let tBase;
+  if (course.id === "c3f8") {
+    tBase = clamp(C3F8_FULL_GONE_DAYS * (hl / hl14), 32, 56);
+  } else if (course.id === "sf6") {
+    tBase = 16 * (hl / absorptionHalfLifeDays("sf6", 20, "phakic"));
+  } else {
+    tBase = 7 * (hl / absorptionHalfLifeDays("air", 100, "phakic"));
+  }
+  const frac = clamp((Number(vPeak) || 0) / Math.max(Number(cavityMl) || 0, 1e-6), 0.15, 1);
+  return tBase * (frac ** ABSORB_SIZE_EXP);
+}
+
+function daysUntilGone(volumeMl, halfLifeDays, tPeakDays = 0, cavityMl = 4.5, id = "c3f8") {
+  const course = { id, halfLifeDays, tPeakDays: tPeakDays || 0 };
+  const vPeak = Math.max(Number(volumeMl) || 0, 0);
+  const t0 = Math.max(Number(tPeakDays) || 0, 0);
+  if (vPeak < PLANNER_GONE_ML) return t0;
+  const span = absorbSpanDays(course, vPeak, cavityMl);
+  if (!Number.isFinite(span)) return Infinity;
+  const u = (PLANNER_GONE_ML / vPeak) ** (1 / ABSORB_POWER);
+  return t0 + span * (1 - u);
+}
+
+function gasTimeCourse(id, concPct, lens) {
+  const listed = TAMPONADES[id] || TAMPONADES.sf6;
+  if (listed.kind === "oil") {
+    return {
+      kind: "oil",
+      expansion: 1,
+      tPeakDays: 0,
+      durationDays: Infinity,
+      halfLifeDays: Infinity,
+      concPct: 100,
+      isoPct: 100,
+    };
+  }
+  const kin = GAS_KINETICS[listed.id] || GAS_KINETICS.air;
+  const pct = listed.id === "air" ? 100 : clamp(Number(concPct ?? kin.isoPct), 10, 100);
+  const iso = kin.isoPct;
+  let expansion = 1;
+  let tPeakDays = 0;
+  if (pct > iso + 0.05 && kin.Emax > 1) {
+    const u = (pct - iso) / (100 - iso);
+    expansion = 1 + (kin.Emax - 1) * u;
+    tPeakDays = kin.tPeak100Days * u;
+  }
+  const halfLifeDays = absorptionHalfLifeDays(listed.id, pct, lens);
+  return {
+    kind: "gas",
+    id: listed.id,
+    name: listed.name,
+    concPct: pct,
+    isoPct: iso,
+    expansion,
+    tPeakDays,
+    halfLifeDays,
+    durationDays: daysUntilGone(4.5, halfLifeDays, tPeakDays, 4.5, listed.id),
+    Emax: kin.Emax,
+  };
+}
+
+function plannerState(ml, cavityMl, course, day, clipped) {
+  let phase = "stable";
+  if (course.kind === "oil") phase = "stable";
+  else if (ml < PLANNER_GONE_ML) phase = "gone";
+  else if (day < course.tPeakDays - 0.05) phase = "expanding";
+  else phase = "absorbing";
+  return {
+    ...course,
+    day,
+    ml,
+    rawMl: ml,
+    clipped: Boolean(clipped),
+    phase,
+    fillPct: cavityMl > 0 ? (ml / cavityMl) * 100 : 0,
+  };
+}
+
+function occupyingVolumeMl(v0Ml, cavityMl, course, day) {
+  const v0 = Math.max(0, Number(v0Ml) || 0);
+  const cav = Math.max(Number(cavityMl) || 0, 1e-6);
+  if (course.kind === "oil") return clamp(v0, 0, cav);
+  const tEnd = Math.max(0, Number(day) || 0);
+  const vPeak = Math.min(cav, v0 * course.expansion);
+  const tPeak = Math.max(course.tPeakDays || 0, 0);
+  if (tEnd <= tPeak) {
+    const u = tPeak > 1e-9 ? clamp(tEnd / tPeak, 0, 1) : 1;
+    const s = 0.5 * (1 - Math.cos(Math.PI * u));
+    return clamp(v0 + (vPeak - v0) * s, 0, cav);
+  }
+  const span = absorbSpanDays(course, vPeak, cav);
+  if (!Number.isFinite(span) || span <= 0) return vPeak < PLANNER_GONE_ML ? 0 : vPeak;
+  const tau = tEnd - tPeak;
+  if (tau >= span) return 0;
+  const v = vPeak * ((1 - tau / span) ** ABSORB_POWER);
+  return v < PLANNER_GONE_ML ? 0 : clamp(v, 0, cav);
+}
+
+function integratePlanner(v0Ml, cavityMl, id, concPct, lens, maxDays, stepDays) {
+  const base = gasTimeCourse(id, concPct, lens);
+  const v0 = Math.max(0, v0Ml);
+  const recordEvery = stepDays || 0.5;
+  const vPeak = base.kind === "oil" ? v0 : Math.min(cavityMl, v0 * base.expansion);
+  const course = {
+    ...base,
+    durationDays: base.kind === "oil" ? Infinity : daysUntilGone(vPeak, base.halfLifeDays, base.tPeakDays, cavityMl, base.id),
+  };
+  const clipped = course.kind !== "oil" && v0 * course.expansion > cavityMl + 0.02;
+  const pts = [];
+  for (let d = 0; d <= maxDays + 1e-9; d += recordEvery) {
+    pts.push(plannerState(occupyingVolumeMl(v0, cavityMl, course, d), cavityMl, course, d, clipped));
+  }
+  if (!pts.length || pts[pts.length - 1].day < maxDays - 1e-6) {
+    pts.push(plannerState(occupyingVolumeMl(v0, cavityMl, course, maxDays), cavityMl, course, maxDays, clipped));
+  }
+  return pts;
+}
+
+function occupyingVolumeAtDay(v0Ml, cavityMl, id, concPct, lens, day) {
+  const t = Math.max(0, Number(day) || 0);
+  const course = gasTimeCourse(id, concPct, lens);
+  const vPeak = course.kind === "oil" ? v0Ml : Math.min(cavityMl, Math.max(0, v0Ml) * course.expansion);
+  const timed = {
+    ...course,
+    durationDays: course.kind === "oil" ? Infinity : daysUntilGone(vPeak, course.halfLifeDays, course.tPeakDays, cavityMl, course.id),
+  };
+  const clipped = timed.kind !== "oil" && Math.max(0, v0Ml) * timed.expansion > cavityMl + 0.02;
+  return plannerState(occupyingVolumeMl(v0Ml, cavityMl, timed, t), cavityMl, timed, t, clipped);
+}
+
+function plannerCurve(v0Ml, cavityMl, id, concPct, lens, maxDays = PLANNER_MAX_DAYS, stepDays = 0.5) {
+  return integratePlanner(v0Ml, cavityMl, id, concPct, lens, maxDays, stepDays);
 }
 
 function vitreousVolumeFromAxialLength(alMm) {
@@ -183,8 +410,28 @@ const ATCHISON = {
   decenterInferiorMm: 0.2,
 };
 
-const THETA_LENS_PHAKIC_DEG = 50;
-const THETA_LENS_IOL_DEG = 55;
+/** Mira / FCI solid silicone encircling bands. Width × thickness (mm). */
+const BUCKLE_BANDS = {
+  41: { style: "41", name: "41 band", widthMm: 3.5, heightMm: 0.75 },
+  42: { style: "42", name: "42 band", widthMm: 4.0, heightMm: 1.25 },
+};
+
+function resolveBuckle(opts) {
+  if (!opts) return null;
+  const style = String(opts.style || opts || "none");
+  const band = BUCKLE_BANDS[style];
+  if (!band) return null;
+  const raw = opts.center;
+  const center = raw === "equator" || raw === "break" ? raw : "vb";
+  const breakEquatorMm = Number(opts.equatorMm);
+  const breakClockHour = Number(opts.clockHour);
+  return {
+    ...band,
+    center,
+    breakEquatorMm: Number.isFinite(breakEquatorMm) ? breakEquatorMm : 0,
+    breakClockHour: Number.isFinite(breakClockHour) && breakClockHour > 0 ? breakClockHour : 12,
+  };
+}
 
 const CB_FROM_CAP_NASAL_MM_AT_24 = 4.3;
 const CB_FROM_CAP_TEMPORAL_MM_AT_24 = 5.9;
@@ -234,6 +481,36 @@ function worldFromLocal(p, cavity) {
   return add(rotateByAxes(p, cavity.tiltX || 0, cavity.tiltY || 0), c);
 }
 
+/** Wall point with maximum height in world direction `dir` (ellipsoid support). */
+function ellipsoidSupportPoint(cavity, dir) {
+  const n = normalize(dir);
+  const ln = rotateByAxesInv(n, cavity.tiltX || 0, cavity.tiltY || 0);
+  const rx2 = cavity.Rx * cavity.Rx;
+  const ry2 = cavity.Ry * cavity.Ry;
+  const rz2 = cavity.Rz * cavity.Rz;
+  const denom = Math.sqrt(Math.max(rx2 * ln.x * ln.x + ry2 * ln.y * ln.y + rz2 * ln.z * ln.z, 1e-18));
+  const local = vec((rx2 * ln.x) / denom, (ry2 * ln.y) / denom, (rz2 * ln.z) / denom);
+  return worldFromLocal(local, cavity);
+}
+
+function gravitationalApex(cavity, zenith) {
+  return applyBuckleToWallPoint(ellipsoidSupportPoint(cavity, zenith), cavity);
+}
+
+function bubbleAxisOffset(apex, zenith) {
+  return sub(apex, scale(zenith, dot(apex, zenith)));
+}
+
+function radiusFromBubbleAxis(p, zenith, axisOffset) {
+  const perp = sub(p, scale(zenith, dot(p, zenith)));
+  const off = axisOffset || vec(0, 0, 0);
+  return len(sub(perp, off));
+}
+
+function bubbleWorldPoint(zenith, axisOffset, uHat, z, r) {
+  return add(axisOffset || vec(0, 0, 0), add(scale(zenith, z), scale(uHat, r)));
+}
+
 function ellipsoidPointFromCenter(cavity, dir) {
   const u = normalize(dir);
   const localDir = rotateByAxesInv(u, cavity.tiltX || 0, cavity.tiltY || 0);
@@ -243,8 +520,8 @@ function ellipsoidPointFromCenter(cavity, dir) {
   return worldFromLocal(scale(localDir, 1 / Math.sqrt(Math.max(q, 1e-12))), cavity);
 }
 
-/** Hit the retinal ellipsoid along a ray from the visual-axis origin (0,0,0). */
-function ellipsoidPointFromDirection(cavity, dir) {
+/** Unbuckled retinal ellipsoid along a ray from the visual-axis origin (0,0,0). */
+function ellipsoidHitFromOrigin(cavity, dir) {
   const u = normalize(dir);
   const center = cavity.center || vec(0, 0, 0);
   const a = rotateByAxesInv(u, cavity.tiltX || 0, cavity.tiltY || 0);
@@ -263,6 +540,52 @@ function ellipsoidPointFromDirection(cavity, dir) {
   const t = t1 > 1e-8 && t2 > 1e-8 ? Math.min(t1, t2) : Math.max(t1, t2);
   if (!(t > 1e-8)) return ellipsoidPointFromCenter(cavity, u);
   return scale(u, t);
+}
+
+function buckleCenterEquatorMm(cavity, eye, clockHour) {
+  const center = cavity.buckle && cavity.buckle.center;
+  if (center === "equator") return 0;
+  if (center === "break") {
+    const eq = cavity.buckle.breakEquatorMm;
+    return Number.isFinite(eq) ? eq : 0;
+  }
+  return vitreousBasePostEquatorMm(cavity, eye, clockHour);
+}
+
+function buckleIndentMm(cavity, wallPoint) {
+  const buckle = cavity && cavity.buckle;
+  if (!buckle) return 0;
+  const loc = clockAndLatitude(wallPoint, cavity);
+  const centerEq = buckleCenterEquatorMm(cavity, cavity.eye, loc.clockHour);
+  const half = buckle.widthMm / 2;
+  const s = Math.abs(loc.equatorMm - centerEq);
+  if (s >= half) return 0;
+  // Rectangular trough: flat at the band thickness across the width,
+  // with a short roll-off so the sclera does not take a knife edge.
+  const fillet = Math.min(buckle.heightMm, half * 0.4);
+  const inner = Math.max(0, half - fillet);
+  if (s <= inner || fillet < 1e-6) return buckle.heightMm;
+  const u = (s - inner) / fillet;
+  return buckle.heightMm * 0.5 * (1 + Math.cos(Math.PI * u));
+}
+
+function applyBuckleToWallPoint(p, cavity) {
+  const h = buckleIndentMm(cavity, p);
+  if (h <= 0) return p;
+  const L = len(p);
+  if (L < 1e-6) return p;
+  return scale(p, Math.max(L - h, 0.5) / L);
+}
+
+/** Meniscus wall: unbuckled ellipsoid plus the planar lens/IOL opening (no capsule sag). */
+function inCavitySmooth(p, cavity) {
+  if (!inEllipsoid(p, cavity)) return false;
+  return p.z <= lensOpeningZ(cavity) + 0.02;
+}
+
+/** Hit the retinal wall (ellipsoid, then buckle indent) from the visual-axis origin. */
+function ellipsoidPointFromDirection(cavity, dir) {
+  return applyBuckleToWallPoint(ellipsoidHitFromOrigin(cavity, dir), cavity);
 }
 
 function inEllipsoid(p, cavity) {
@@ -301,11 +624,21 @@ function posteriorToLens(p, cavity) {
 }
 
 function inCavity(p, cavity) {
-  return inEllipsoid(p, cavity) && posteriorToLens(p, cavity);
+  if (!inEllipsoid(p, cavity) || !posteriorToLens(p, cavity)) return false;
+  if (!cavity.buckle) return true;
+  const lp = len(p);
+  if (lp < 1e-8) return true;
+  const loc = clockAndLatitude(p, cavity);
+  const centerEq = buckleCenterEquatorMm(cavity, cavity.eye, loc.clockHour);
+  const half = cavity.buckle.widthMm / 2 + cavity.buckle.heightMm + 0.8;
+  if (Math.abs(loc.equatorMm - centerEq) >= half) return true;
+  const wall = applyBuckleToWallPoint(ellipsoidHitFromOrigin(cavity, p), cavity);
+  return lp <= len(wall) + 0.02;
 }
 
 function integrateCavityVolumeMl(cavity) {
-  const key = `${cavity.Rx.toFixed(3)}:${cavity.Ry.toFixed(3)}:${cavity.Rz.toFixed(3)}:${cavity.zLens.toFixed(3)}:${cavity.lens}:${(cavity.tiltX || 0).toFixed(3)}:${(cavity.tiltY || 0).toFixed(3)}:${(cavity.center && cavity.center.x) || 0}:${(cavity.center && cavity.center.y) || 0}`;
+  const buckle = cavity.buckle;
+  const key = `${cavity.Rx.toFixed(3)}:${cavity.Ry.toFixed(3)}:${cavity.Rz.toFixed(3)}:${cavity.zLens.toFixed(3)}:${cavity.lens}:${(cavity.tiltX || 0).toFixed(3)}:${(cavity.tiltY || 0).toFixed(3)}:${(cavity.center && cavity.center.x) || 0}:${(cavity.center && cavity.center.y) || 0}:${(buckle && buckle.style) || "none"}:${(buckle && buckle.center) || ""}:${buckle && buckle.center === "break" ? Number(buckle.breakEquatorMm).toFixed(2) : ""}`;
   if (cavityVolumeCache.has(key)) return cavityVolumeCache.get(key);
   const nx = 36;
   const ny = 36;
@@ -396,7 +729,7 @@ function lensSurfaceRings(cavity, nRho = 12, nPhi = 36) {
   return rings;
 }
 
-function buildCavity(axialMm, lensType, eye) {
+function buildCavity(axialMm, lensType, eye, buckleOpts) {
   const al = clamp(axialMm, AL_MIN_MM, AL_MAX_MM);
   const sr = spectacleRefractionFromAl(al);
   const Rx = Math.max(ATCHISON.rx0 + ATCHISON.rxPerSr * sr, 8);
@@ -428,6 +761,7 @@ function buildCavity(axialMm, lensType, eye) {
     Rmean: (Rx + Ry + Rz) / 3,
     fovea: vec(0, 0, -Rz),
     anterior: vec(0, 0, Rz),
+    buckle: resolveBuckle(buckleOpts),
   };
   cavity.fovea = visualAxisHit(cavity, -1);
   cavity.anterior = visualAxisHit(cavity, 1);
@@ -1072,8 +1406,8 @@ function meniscusCircle(radiusMm, zenith, meniscusMm, n = 64) {
   return { center, radius: r, points: pts };
 }
 
-function maculaRing(cavity, n = 64) {
-  const ang = MACULA_RADIUS_MM / cavity.Rmean;
+function fovealRing(cavity, radiusMm, n = 48) {
+  const ang = radiusMm / cavity.Rmean;
   const pts = [];
   for (let i = 0; i < n; i += 1) {
     const t = (2 * Math.PI * i) / n;
@@ -1081,6 +1415,10 @@ function maculaRing(cavity, n = 64) {
     pts.push(ellipsoidPointFromDirection(cavity, dir));
   }
   return pts;
+}
+
+function maculaRing(cavity, n = 64) {
+  return fovealRing(cavity, MACULA_RADIUS_MM, n);
 }
 
 function nasalHat(eye) {
@@ -1180,14 +1518,6 @@ function clockDir(clockHour) {
   return vec(Math.sin(az), Math.cos(az), 0);
 }
 
-function oraDistancesMm(cavity) {
-  const dAl = (cavity.al || 24) - 24;
-  return {
-    nasalMm: ORA_NASAL_MM_AT_24 + ORA_MM_PER_AL * dAl,
-    temporalMm: ORA_TEMPORAL_MM_AT_24 + ORA_MM_PER_AL * dAl,
-  };
-}
-
 function interpolateNasalTemporal(cavity, eye, clockHour, nasalMm, temporalMm) {
   const nasalness = (1 + dot(normalize(clockDir(clockHour)), nasalHat(eye))) / 2;
   return nasalMm * nasalness + temporalMm * (1 - nasalness);
@@ -1240,9 +1570,22 @@ function ciliaryDistancesMm(cavity, eye) {
   };
 }
 
-function oraPointAtClock(cavity, eye, clockHour) {
-  const { nasalMm, temporalMm } = oraDistancesMm(cavity);
-  return pointAtClockFromAnterior(cavity, eye, clockHour, nasalMm, temporalMm);
+function equatorPointAtClock(cavity, clockHour) {
+  return breakPosition(cavity, clockHour, 0);
+}
+
+function geometricEquatorRing(cavity, n = 96) {
+  const pts = [];
+  for (let i = 0; i <= n; i += 1) {
+    pts.push(equatorPointAtClock(cavity, (12 * i) / n));
+  }
+  return pts;
+}
+
+function parsPlanaEquatorMm(cavity, eye, clockHour) {
+  const cb = ciliaryDistancesMm(cavity, eye);
+  const d = interpolateNasalTemporal(cavity, eye, clockHour, cb.nasalMm, cb.temporalMm);
+  return equatorMmFromAnteriorGeodesic(cavity, d);
 }
 
 function vitreousBasePostPointAtClock(cavity, eye, clockHour) {
@@ -1268,26 +1611,31 @@ function vitreousBasePostEquatorMm(cavity, eye, clockHour) {
   return equatorMmFromAnteriorGeodesic(cavity, d);
 }
 
+function ringAtEquatorMm(cavity, n, equatorMmAtClock) {
+  const pts = [];
+  for (let i = 0; i <= n; i += 1) {
+    const hour = (12 * i) / n;
+    const eq = typeof equatorMmAtClock === "function" ? equatorMmAtClock(hour) : equatorMmAtClock;
+    pts.push(breakPosition(cavity, hour, eq));
+  }
+  return pts;
+}
+
 function extraLandmarks(cavity, eye) {
   if (!SHOW_ORA) return null;
   const side = eye === "OS" ? "OS" : "OD";
   const nasal = nasalHat(side);
   const temporal = scale(nasal, -1);
-  const { nasalMm, temporalMm } = oraDistancesMm(cavity);
   const cb = ciliaryDistancesMm(cavity, side);
-  const nasalPt = pointFromAnterior(cavity, nasal, nasalMm);
-  const temporalPt = pointFromAnterior(cavity, temporal, temporalMm);
-  return {
+  const nasalHour = side === "OS" ? 9 : 3;
+  const extra = {
     axialMm: cavity.al,
-    nasalMm,
-    temporalMm,
     cbNasalMm: cb.nasalMm,
     cbTemporalMm: cb.temporalMm,
     cbFromCapN: cb.fromCapN,
     cbFromCapT: cb.fromCapT,
-    nasalPt,
-    temporalPt,
-    ora: oraOnCavity(cavity, nasal, temporal, nasalMm, temporalMm),
+    nasalPt: equatorPointAtClock(cavity, nasalHour),
+    equator: geometricEquatorRing(cavity),
     vitreousBasePost: oraOnCavity(
       cavity,
       nasal,
@@ -1297,6 +1645,20 @@ function extraLandmarks(cavity, eye) {
     ),
     ciliary: oraOnCavity(cavity, nasal, temporal, cb.nasalMm, cb.temporalMm),
   };
+  if (cavity.buckle) {
+    const half = cavity.buckle.widthMm / 2;
+    const centerFn = (hour) => buckleCenterEquatorMm(cavity, side, hour);
+    extra.buckleName = cavity.buckle.name;
+    extra.buckleCenter = ringAtEquatorMm(cavity, 96, centerFn);
+    extra.buckleAnt = ringAtEquatorMm(cavity, 64, (hour) => centerFn(hour) - half);
+    extra.bucklePost = ringAtEquatorMm(cavity, 64, (hour) => centerFn(hour) + half);
+    extra.buckleLabelPt = breakPosition(
+      cavity,
+      cavity.buckle.breakClockHour || 12,
+      centerFn(cavity.buckle.breakClockHour || 12)
+    );
+  }
+  return extra;
 }
 
 function meniscusZAtR(yl, r) {
@@ -1334,12 +1696,10 @@ function meniscusZFn(yl) {
 
 function clampToCavity(p, cavity) {
   if (inCavity(p, cavity)) return p;
-  // Keep the same direction from the origin. Snapping |z| ≥ Rz to the
-  // posterior pole made the meniscus look like it was dragging on the fovea.
-  let q = inEllipsoid(p, cavity) ? p : ellipsoidPointFromDirection(cavity, p);
+  let q = ellipsoidPointFromDirection(cavity, p);
   const zCap = lensZ(cavity, q.x, q.y);
   if (q.z > zCap) q = vec(q.x, q.y, zCap);
-  if (!inEllipsoid(q, cavity)) q = ellipsoidPointFromDirection(cavity, q);
+  if (!inCavity(q, cavity)) q = ellipsoidPointFromDirection(cavity, q);
   return q;
 }
 
@@ -1370,12 +1730,12 @@ function cavitySamples(cavity, nx = 24, ny = 24, nz = 32) {
   return cavity._samples;
 }
 
-function shiftMeniscusToVolume(cavity, zenith, yl, targetMl, samples) {
+function shiftMeniscusToVolume(cavity, zenith, yl, targetMl, samples, axisOffset) {
   const R = Math.max(cavity.Rx, cavity.Ry, cavity.Rz);
   const zOfR = meniscusZFn(yl);
   const coords = samples.pts.map((p) => {
     const z = dot(p, zenith);
-    return { z, r: len(sub(p, scale(zenith, z))) };
+    return { z, r: radiusFromBubbleAxis(p, zenith, axisOffset) };
   });
   const volumeAt = (zShift) => {
     let n = 0;
@@ -1404,20 +1764,25 @@ function frameAroundZenith(zenith) {
   return { u0, v0 };
 }
 
-function wallAwareSpoke(path, zShift, cavity, zenith, uHat) {
-  const world = path.map((p) => add(scale(zenith, p.z + zShift), scale(uHat, p.r)));
+function wallAwareSpoke(path, zShift, cavity, zenith, uHat, axisOffset) {
+  const world = path.map((p) => bubbleWorldPoint(zenith, axisOffset, uHat, p.z + zShift, p.r));
   let hit = world.length;
   for (let i = 0; i < world.length; i += 1) {
-    if (!inCavity(world[i], cavity)) {
+    if (!inCavitySmooth(world[i], cavity)) {
       hit = i;
       break;
     }
   }
   if (hit >= world.length) {
-    return { world: world.map((p) => clampToCavity(p, cavity)), onLens: false };
+    return {
+      world,
+      contact: world[world.length - 1],
+      onLens: false,
+      hit: world.length,
+    };
   }
   if (hit === 0) {
-    return { world: [clampToCavity(world[0], cavity)], onLens: true };
+    return { world: [world[0]], contact: world[0], onLens: true, hit: 0 };
   }
   const a = world[hit - 1];
   const b = world[hit];
@@ -1426,12 +1791,12 @@ function wallAwareSpoke(path, zShift, cavity, zenith, uHat) {
   for (let n = 0; n < 14; n += 1) {
     const t = 0.5 * (lo + hi);
     const mid = add(a, scale(sub(b, a), t));
-    if (inCavity(mid, cavity)) lo = t;
+    if (inCavitySmooth(mid, cavity)) lo = t;
     else hi = t;
   }
   const contact = add(a, scale(sub(b, a), 0.5 * (lo + hi)));
-  const onLens = Math.abs(contact.z - lensZ(cavity, contact.x, contact.y)) < 0.25;
-  return { world: world.slice(0, hit).concat([contact]), onLens };
+  const onLens = Math.abs(contact.z - lensOpeningZ(cavity)) < 0.35;
+  return { world, contact, onLens, hit };
 }
 
 function ringsFromSpokes(spokes) {
@@ -1443,48 +1808,46 @@ function ringsFromSpokes(spokes) {
   return rings;
 }
 
-function buildWallAwareRings(pathRetina, pathLens, zShift, cavity, zenith, nTheta = 32) {
+function buildWallAwareRings(path, zShift, cavity, zenith, axisOffset, nTheta = 32) {
   const { u0, v0 } = frameAroundZenith(zenith);
   const spokes = [];
+  const contacts = [];
   let lensHits = 0;
+  let meridian = [];
   for (let j = 0; j < nTheta; j += 1) {
     const t = (2 * Math.PI * j) / nTheta;
     const u = add(scale(u0, Math.cos(t)), scale(v0, Math.sin(t)));
-    let spoke = wallAwareSpoke(pathRetina, zShift, cavity, zenith, u);
-    if (spoke.onLens && pathLens) {
-      spoke = wallAwareSpoke(pathLens, zShift, cavity, zenith, u);
-      lensHits += 1;
-    }
+    const spoke = wallAwareSpoke(path, zShift, cavity, zenith, u, axisOffset);
+    if (spoke.onLens) lensHits += 1;
     spokes.push(spoke.world);
+    contacts.push(spoke.contact);
+    if (j === 0) {
+      meridian = spoke.world.slice(0, Math.max(spoke.hit, 1)).concat([spoke.contact]);
+    }
   }
-  return { rings: ringsFromSpokes(spokes), lensHits };
+  return { rings: ringsFromSpokes(spokes), contacts, meridian, lensHits };
 }
 
-function simulate(params) {
-  const fluid = tamponadeProps(params.tamponade, params.cavityFluid);
+function simulate(params, options) {
+  const fluid = tamponadeProps(params.tamponade, params.cavityFluid, params.gasPct);
   const lens = params.lens === "pseudo" ? "pseudo" : "phakic";
   const eye = params.eye === "OS" ? "OS" : "OD";
-  const cavity = params.cavity || buildCavity(params.axialMm || 24, lens, eye);
+  const buckle = params.buckle
+    ? { ...params.buckle, equatorMm: params.equatorMm, clockHour: params.clockHour }
+    : params.buckle;
+  const cavity = params.cavity || buildCavity(params.axialMm || 24, lens, eye, buckle);
   const cavityMl = cavity.volumeMl;
-  const thetaLensDeg = lens === "pseudo" ? THETA_LENS_IOL_DEG : THETA_LENS_PHAKIC_DEG;
-  fluid.thetaLensDeg = fluid.kind === "oil" ? 30 : thetaLensDeg;
-  fluid.thetaLensRad = (fluid.thetaLensDeg * Math.PI) / 180;
   const tamponadeMl = clamp(params.tamponadeMl || params.fillPct / 100 * cavityMl, 0, cavityMl);
   const fill = clamp(tamponadeMl / cavityMl, 0, 1);
   const radiusMm = cavity.Rmean;
   const kFlat = capHeightFraction(fill);
   const zenith = zenithVector(params.faceDownDeg, params.tiltLRDeg);
+  const zenithPoint = gravitationalApex(cavity, zenith);
+  const axisOffset = bubbleAxisOffset(zenithPoint, zenith);
   const samples = cavitySamples(cavity);
-  const fluidLens = { ...fluid, thetaAqueousRad: fluid.thetaLensRad, thetaDeg: fluid.thetaLensDeg };
   const yl = solveYoungLaplace(radiusMm, fill, fluid, tamponadeMl * 1000);
-  const ylLens = solveYoungLaplace(radiusMm, fill, fluidLens, tamponadeMl * 1000);
   const zOfR = meniscusZFn(yl);
-  const zShift = yl.full ? 0 : shiftMeniscusToVolume(cavity, zenith, yl, tamponadeMl, samples);
-  const path = (yl.path || []).map((p) => ({ ...p, z: p.z + zShift }));
-  const mesh = buildWallAwareRings(yl.path || [], ylLens.path || [], zShift, cavity, zenith);
-  const rings = mesh.rings;
-  const zApex = (yl.zA || 0) + zShift;
-  const betaContact = yl.beta;
+  const zShift = yl.full ? 0 : shiftMeniscusToVolume(cavity, zenith, yl, tamponadeMl, samples, axisOffset);
   const vbEq = vitreousBasePostEquatorMm(cavity, eye, params.clockHour);
   const brk = Math.abs((params.equatorMm ?? vbEq) - vbEq) <= 0.2
     ? vitreousBasePostPointAtClock(cavity, eye, params.clockHour)
@@ -1493,15 +1856,23 @@ function simulate(params) {
     if (!inCavity(p, cavity)) return false;
     if (fill >= 0.995 || yl.full) return true;
     const z = dot(p, zenith);
-    const r = len(sub(p, scale(zenith, z)));
+    const r = radiusFromBubbleAxis(p, zenith, axisOffset);
     return z >= zOfR(r) + zShift - 0.05;
   };
   const fovea = cavity.fovea;
-  const zenithPoint = ellipsoidPointFromDirection(cavity, zenith);
+  const tamponaded = fill > 0 && inGas(brk);
+  const foveaCovered = fill > 0 && inGas(fovea);
+  if (options && options.coverageOnly) {
+    return { tamponaded, macularHoleTamponaded: foveaCovered };
+  }
+  const path = (yl.path || []).map((p) => ({ ...p, z: p.z + zShift }));
+  const mesh = buildWallAwareRings(yl.path || [], zShift, cavity, zenith, axisOffset);
+  const rings = mesh.rings;
+  const zApex = (yl.zA || 0) + zShift;
+  const betaContact = yl.beta;
   const breakLoc = clockAndLatitude(brk, cavity);
   const zenithLoc = clockAndLatitude(zenithPoint, cavity);
   const laplaceMmHg = fluid.laplaceMmHgPerKappa * yl.kappa0;
-  const tamponaded = fill > 0 && inGas(brk);
   const pressureAt = (p) => {
     const wall = ellipsoidPointFromDirection(cavity, p);
     if (!inGas(wall)) return 0;
@@ -1521,6 +1892,13 @@ function simulate(params) {
   const meanMacula = maculaPts.length
     ? maculaPts.reduce((sum, s) => sum + s.pressure, 0) / maculaPts.length
     : 0;
+  const pMacSup = pressureAt(pointFromFovea(cavity, eye, Math.PI / 2, MACULA_RADIUS_MM * 0.7));
+  const pMacInf = pressureAt(pointFromFovea(cavity, eye, -Math.PI / 2, MACULA_RADIUS_MM * 0.7));
+  const pMacNas = pressureAt(pointFromFovea(cavity, eye, 0, MACULA_RADIUS_MM * 0.7));
+  const pMacTem = pressureAt(pointFromFovea(cavity, eye, Math.PI, MACULA_RADIUS_MM * 0.7));
+  const maculaSI = pMacSup - pMacInf;
+  const maculaNT = pMacNas - pMacTem;
+  const downwardOnMacula = maculaSI > 0.02 && pMacSup > 0.01;
   const pFovea = pressureAt(fovea);
   const pBreak = tamponaded ? pressureAt(brk) : 0;
   const pZenith = pressureAt(zenithPoint);
@@ -1547,9 +1925,15 @@ function simulate(params) {
     });
   }
 
-  const contactCircle = rings.length ? rings[rings.length - 1].slice() : [];
-  const breakR = len(sub(brk, scale(zenith, dot(brk, zenith))));
+  const contactCircle = mesh.contacts && mesh.contacts.length
+    ? mesh.contacts
+    : (rings.length ? rings[rings.length - 1].slice() : []);
+  const breakR = radiusFromBubbleAxis(brk, zenith, axisOffset);
   const marginMm = dot(brk, zenith) - (zOfR(breakR) + zShift);
+  const macularHole = Boolean(params.macularHole);
+  const mhR = radiusFromBubbleAxis(fovea, zenith, axisOffset);
+  const mhMarginMm = dot(fovea, zenith) - (zOfR(mhR) + zShift);
+  const macularHoleTamponaded = macularHole && foveaCovered;
 
   return {
     params: {
@@ -1571,7 +1955,13 @@ function simulate(params) {
     fovea,
     zenithPoint,
     tamponaded,
+    macularHole,
+    macularHoleTamponaded,
+    maculaProtected: foveaCovered,
+    macularHoleRing: macularHole ? fovealRing(cavity, MACULAR_HOLE_RADIUS_MM) : [],
+    macularHoleRadiusMm: MACULAR_HOLE_RADIUS_MM,
     heightAboveMeniscus: marginMm,
+    macularHoleHeight: mhMarginMm,
     breakLoc,
     zenithLoc,
     inGas,
@@ -1580,6 +1970,7 @@ function simulate(params) {
       points: contactCircle,
       rings,
       meridian: path,
+      meridianSpoke: mesh.meridian || [],
       zApex,
       kappa0: yl.kappa0,
       betaContact,
@@ -1599,6 +1990,13 @@ function simulate(params) {
     pressure: {
       fovea: pFovea,
       maculaMean: meanMacula,
+      maculaSuperior: pMacSup,
+      maculaInferior: pMacInf,
+      maculaNasal: pMacNas,
+      maculaTemporal: pMacTem,
+      maculaSI,
+      maculaNT,
+      downwardOnMacula,
       break: pBreak,
       zenith: pZenith,
       max: Math.max(pZenith, laplaceMmHg),
@@ -1627,6 +2025,7 @@ function simulate(params) {
 
 window.BubbleModel = {
   MACULA_RADIUS_MM,
+  MACULAR_HOLE_RADIUS_MM,
   SHOW_ORA,
   DISC_FOVEA_MM,
   ARCADE_FOVEA_MM,
@@ -1645,12 +2044,16 @@ window.BubbleModel = {
   capHeightFraction,
   AL_MIN_MM,
   AL_MAX_MM,
+  BUCKLE_BANDS,
+  resolveBuckle,
+  applyBuckleToWallPoint,
+  buckleCenterEquatorMm,
   worldFromLocal,
   localFromWorld,
   breakPosition,
   breakArcRange,
   clockAndLatitude,
-  oraPointAtClock,
+  equatorPointAtClock,
   vitreousBasePostEquatorMm,
   vitreousBasePostPointAtClock,
   zenithVector,
@@ -1664,12 +2067,21 @@ window.BubbleModel = {
   GAS_MODEL,
   CAVITY_FLUIDS,
   tamponadeProps,
+  GAS_KINETICS,
+  PLANNER_MAX_DAYS,
+  PLANNER_GONE_ML,
+  absorptionHalfLifeDays,
+  daysUntilGone,
+  gasTimeCourse,
+  occupyingVolumeAtDay,
+  plannerCurve,
   vitreousVolumeFromAxialLength,
   buildCavity,
   axialLengthFromVolume,
   ellipsoidPointFromDirection,
   posteriorToLens,
   inCavity,
+  inCavitySmooth,
   lensZ,
   clampToCavity,
   SIGMA_N_M,

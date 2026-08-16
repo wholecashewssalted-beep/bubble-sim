@@ -104,9 +104,9 @@ const Draw3D = (() => {
       drawPolyline(ctx, extra.vitreousBasePost.map(proj), colors.base || "#6a7a3a", 1.8);
       ctx.setLineDash([]);
     }
-    if (extra.ora && extra.ora.length > 1) {
+    if (extra.equator && extra.equator.length > 1) {
       ctx.setLineDash([5, 4]);
-      drawPolyline(ctx, extra.ora.map(proj), colors.ora, 2);
+      drawPolyline(ctx, extra.equator.map(proj), colors.ora, 2);
       ctx.setLineDash([]);
       if (extra.nasalPt) {
         const nasal = proj(extra.nasalPt);
@@ -127,12 +127,27 @@ const Draw3D = (() => {
       ctx.font = "600 11px Figtree, sans-serif";
       ctx.fillText("pars plana", cb.x + 6, cb.y - 6);
     }
+    if (extra.buckleCenter && extra.buckleCenter.length > 1) {
+      const buckleColor = colors.buckle || "#3d5a73";
+      if (extra.buckleAnt && extra.buckleAnt.length > 1) {
+        drawPolyline(ctx, extra.buckleAnt.map(proj), buckleColor, 1.3);
+      }
+      if (extra.bucklePost && extra.bucklePost.length > 1) {
+        drawPolyline(ctx, extra.bucklePost.map(proj), buckleColor, 1.3);
+      }
+      drawPolyline(ctx, extra.buckleCenter.map(proj), buckleColor, 2.6);
+      const labelPt = extra.buckleLabelPt || extra.buckleCenter[0];
+      const bp = proj(labelPt);
+      ctx.fillStyle = buckleColor;
+      ctx.font = "600 11px Figtree, sans-serif";
+      ctx.fillText(extra.buckleName || "buckle", bp.x + 6, bp.y - 6);
+    }
   }
 
   function clockLabelPoint(model, hour) {
     const cavity = model.cavity;
-    if (cavity && BubbleModel.oraPointAtClock) {
-      return BubbleModel.oraPointAtClock(cavity, model.eye, hour);
+    if (cavity && BubbleModel.equatorPointAtClock) {
+      return BubbleModel.equatorPointAtClock(cavity, hour);
     }
     return BubbleModel.breakPosition(cavity || model.radiusMm, hour, 0);
   }
@@ -147,6 +162,32 @@ const Draw3D = (() => {
     ctx.lineWidth = 2.2;
     ctx.lineCap = "round";
     ctx.stroke();
+  }
+
+  function drawMacularHole(ctx, proj, model, options = {}) {
+    if (!model.macularHole || !(model.macularHoleRing && model.macularHoleRing.length)) return;
+    const ring = model.macularHoleRing.map(proj);
+    const fill = model.macularHoleTamponaded ? "#1f6b45" : "#9b1c1c";
+    ctx.beginPath();
+    ring.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+    ctx.closePath();
+    ctx.fillStyle = model.macularHoleTamponaded ? "rgba(31, 107, 69, 0.28)" : "rgba(155, 28, 28, 0.28)";
+    ctx.fill();
+    ctx.strokeStyle = fill;
+    ctx.lineWidth = 2.4;
+    ctx.stroke();
+    if (!options.label) return;
+    const fovea = proj(model.fovea);
+    ctx.font = "600 12px Figtree, sans-serif";
+    ctx.fillStyle = fill;
+    ctx.fillText(model.macularHoleTamponaded ? "MH · tamponaded" : "MH", fovea.x + 10, fovea.y + 16);
+  }
+
+  function tamponadeHeadline(model) {
+    const br = model.tamponaded ? "Break is tamponaded" : "Break is not tamponaded";
+    if (!model.macularHole) return br;
+    const mh = model.macularHoleTamponaded ? "MH is tamponaded" : "MH is not tamponaded";
+    return `${br}  ·  ${mh}`;
   }
 
   function drawTearMarker(ctx, proj, model, options = {}) {
@@ -203,13 +244,18 @@ const Draw3D = (() => {
     const yaw = view.yaw;
     const pitch = view.pitch;
     const proj = (p) => project(p, yaw, pitch, scalePx, cx, cy);
+    const nLat = cavity && cavity.buckle ? 48 : 22;
+    const nLon = cavity && cavity.buckle ? 56 : 36;
     const inside = (p) => !cavity || BubbleModel.inCavity(p, cavity);
     const toWall = (p) => {
       const local = vec(p.x * Rx, p.y * Ry, p.z * Rz);
-      return cavity ? BubbleModel.worldFromLocal(local, cavity) : local;
+      const world = cavity ? BubbleModel.worldFromLocal(local, cavity) : local;
+      return cavity && BubbleModel.applyBuckleToWallPoint
+        ? BubbleModel.applyBuckleToWallPoint(world, cavity)
+        : world;
     };
 
-    const tris = sphereTriangles(1, 22, 36).map((tri) => {
+    const tris = sphereTriangles(1, nLat, nLon).map((tri) => {
       const mapped = tri.map(toWall);
       const mid = scale(add(add(mapped[0], mapped[1]), mapped[2]), 1 / 3);
       const inGas = inside(mid) && model.inGas(mid);
@@ -238,7 +284,7 @@ const Draw3D = (() => {
         const triB = [b[j], b[j2], a[j2]];
         [triA, triB].forEach((tri) => {
           const mid = scale(add(add(tri[0], tri[1]), tri[2]), 1 / 3);
-          if (cavity && !BubbleModel.inCavity(mid, cavity)) return;
+          if (cavity && !(BubbleModel.inCavitySmooth || BubbleModel.inCavity)(mid, cavity)) return;
           const q = tri.map(proj);
           menTris.push({ q, z: (q[0].z + q[1].z + q[2].z) / 3 });
         });
@@ -283,16 +329,17 @@ const Draw3D = (() => {
       ctx.stroke();
     }
 
-    if (model.meniscus.meridian && model.meniscus.meridian.length > 1 && rings.length > 1) {
-      const mer = rings.map((ring) => ring[0]).map(proj);
+    if (model.meniscus.meridianSpoke && model.meniscus.meridianSpoke.length > 1) {
+      const mer = model.meniscus.meridianSpoke.map(proj);
       ctx.beginPath();
       mer.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
       ctx.strokeStyle = "#0f3f40";
       ctx.lineWidth = 2.6;
       ctx.stroke();
 
-      const cW = rings[rings.length - 1][0];
-      const iW = rings[rings.length - 2][0];
+      const spoke = model.meniscus.meridianSpoke;
+      const cW = spoke[spoke.length - 1];
+      const iW = spoke[Math.max(spoke.length - 2, 0)];
       const n = normalize(cW);
       const iface = normalize(sub(iW, cW));
       const wall = normalize(sub(scale(n, dot(n, model.zenith)), model.zenith));
@@ -323,6 +370,7 @@ const Draw3D = (() => {
       ora: "#6b4a8a",
       base: "#6a7a3a",
       ciliary: "#8a5a2a",
+      buckle: "#3d5a73",
     });
 
     const mac = model.maculaRing.map(proj);
@@ -334,6 +382,8 @@ const Draw3D = (() => {
     ctx.lineWidth = 1.4;
     ctx.stroke();
     ctx.setLineDash([]);
+
+    drawMacularHole(ctx, proj, model);
 
     const z0 = proj(vec(0, 0, 0));
     const z1 = proj(scale(model.zenith, R * 1.35));
@@ -359,10 +409,10 @@ const Draw3D = (() => {
 
     ctx.fillStyle = "#1b2430";
     ctx.font = "600 16px Figtree, sans-serif";
-    ctx.fillText(model.tamponaded ? "Break is tamponaded" : "Break is not tamponaded", 20, 32);
+    ctx.fillText(tamponadeHeadline(model), 20, 32);
     ctx.fillStyle = "#5d6a78";
     ctx.font = "500 13px Figtree, sans-serif";
-    ctx.fillText(`Drag to rotate  ·  ${model.eye}  ·  ${cavity && cavity.lens === "pseudo" ? "pseudophakic plane" : "phakic Navarro lens"}  ·  Atchison tilt  ·  12 up`, 20, h - 18);
+    ctx.fillText(`Drag to rotate  ·  ${model.eye}  ·  ${cavity && cavity.lens === "pseudo" ? "pseudophakic plane" : "phakic Navarro lens"}  ·  anatomy fixed · bubble follows pose`, 20, h - 18);
   }
 
   function drawForce(canvas, model) {
@@ -439,11 +489,13 @@ const Draw3D = (() => {
     ctx.fillStyle = "#1b2430";
     ctx.font = "600 11px Figtree, sans-serif";
     ctx.fillText("fovea", fovea.x + 8, fovea.y - 8);
+    drawMacularHole(ctx, proj, model, { label: true });
     drawFundus(ctx, model, proj, { vessels: "#7a1f1f", disc: "#d7b56a", discStroke: "#4a3318" });
     drawOraAndVortex(ctx, model, proj, {
       ora: "#5a3a7a",
       base: "#6a7a3a",
       ciliary: "#8a5a2a",
+      buckle: "#2c4a63",
     });
 
     const arrowScale = (R * 0.55) / maxP;
@@ -494,7 +546,7 @@ const Draw3D = (() => {
     ctx.fillText("Hydrostatic force on the posterior retina", 20, 28);
     ctx.fillStyle = "#5d6a78";
     ctx.font = "500 13px Figtree, sans-serif";
-    ctx.fillText(`Macula outlined (r = ${model.maculaRadiusMm} mm)  ·  tear marked  ·  ${model.eye} disc + arcades  ·  ΔP = ρgΔh`, 20, 48);
+    ctx.fillText(`Macula outlined (r = ${model.maculaRadiusMm} mm)  ·  tear marked${model.macularHole ? "  ·  MH at fovea" : ""}  ·  ${model.eye} disc + arcades  ·  ΔP = ρgΔh`, 20, 48);
 
     drawProfile(ctx, model, 16, mapH + 8, w - 32, h - mapH - 20);
     drawColorBar(ctx, w - 36, 70, 10, mapH * 0.45, maxP);
@@ -539,6 +591,112 @@ const Draw3D = (() => {
     if (zenithPt) ctx.fillText("zenith", px(zenithPt.s) + 4, y + 26);
   }
 
+  function drawPlannerChart(canvas, curve, currentDay, cavityMl) {
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#f4efe5";
+    ctx.fillRect(0, 0, w, h);
+    const pad = { l: 52, r: 18, t: 36, b: 42 };
+    const x0 = pad.l;
+    const y0 = pad.t;
+    const cw = w - pad.l - pad.r;
+    const ch = h - pad.t - pad.b;
+    const maxDays = BubbleModel.PLANNER_MAX_DAYS || 56;
+    const yMax = Math.max(cavityMl || 1, ...curve.map((p) => p.rawMl || p.ml), 0.5);
+    const xOf = (d) => x0 + (d / maxDays) * cw;
+    const yOf = (ml) => y0 + ch - (ml / yMax) * ch;
+
+    ctx.strokeStyle = "#d7cbb8";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x0, y0 + ch);
+    ctx.lineTo(x0 + cw, y0 + ch);
+    ctx.stroke();
+
+    ctx.fillStyle = "#5d6a78";
+    ctx.font = "500 11px Figtree, sans-serif";
+    for (let week = 0; week <= 8; week += 1) {
+      const x = xOf(week * 7);
+      ctx.strokeStyle = "rgba(215, 203, 184, 0.7)";
+      ctx.beginPath();
+      ctx.moveTo(x, y0);
+      ctx.lineTo(x, y0 + ch);
+      ctx.stroke();
+      ctx.fillStyle = "#5d6a78";
+      ctx.fillText(`${week}w`, x - 8, y0 + ch + 18);
+    }
+    const yTicks = 4;
+    for (let i = 0; i <= yTicks; i += 1) {
+      const ml = (yMax * i) / yTicks;
+      const y = yOf(ml);
+      ctx.fillStyle = "#5d6a78";
+      ctx.fillText(ml.toFixed(1), 8, y + 4);
+    }
+
+    ctx.strokeStyle = "rgba(26, 95, 95, 0.35)";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x0, yOf(cavityMl));
+    ctx.lineTo(x0 + cw, yOf(cavityMl));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#1a5f5f";
+    ctx.fillText("cavity", x0 + cw - 44, yOf(cavityMl) - 6);
+
+    if (curve.length > 1) {
+      ctx.beginPath();
+      curve.forEach((p, i) => (i ? ctx.lineTo(xOf(p.day), yOf(p.ml)) : ctx.moveTo(xOf(p.day), yOf(p.ml))));
+      ctx.lineTo(xOf(curve[curve.length - 1].day), yOf(0));
+      ctx.lineTo(xOf(curve[0].day), yOf(0));
+      ctx.closePath();
+      ctx.fillStyle = "rgba(78, 168, 164, 0.22)";
+      ctx.fill();
+      ctx.beginPath();
+      curve.forEach((p, i) => (i ? ctx.lineTo(xOf(p.day), yOf(p.ml)) : ctx.moveTo(xOf(p.day), yOf(p.ml))));
+      ctx.strokeStyle = "#1a5f5f";
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+    }
+
+    const tPeak = curve[0] && curve[0].tPeakDays;
+    if (tPeak > 0.2) {
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = "#8d4b2b";
+      ctx.beginPath();
+      ctx.moveTo(xOf(tPeak), y0);
+      ctx.lineTo(xOf(tPeak), y0 + ch);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#8d4b2b";
+      ctx.fillText("peak", xOf(tPeak) + 4, y0 + 14);
+    }
+
+    const now = BubbleModel.clamp(currentDay, 0, maxDays);
+    ctx.strokeStyle = "#1b2430";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(xOf(now), y0);
+    ctx.lineTo(xOf(now), y0 + ch);
+    ctx.stroke();
+    const here = curve.reduce((best, p) => (Math.abs(p.day - now) < Math.abs(best.day - now) ? p : best), curve[0] || { day: 0, ml: 0 });
+    if (here) {
+      ctx.beginPath();
+      ctx.arc(xOf(now), yOf(here.ml), 5.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#0f3f40";
+      ctx.fill();
+    }
+
+    ctx.fillStyle = "#1b2430";
+    ctx.font = "600 16px Figtree, sans-serif";
+    ctx.fillText("Occupying volume (mL)", 20, 24);
+    ctx.fillStyle = "#5d6a78";
+    ctx.font = "500 12px Figtree, sans-serif";
+    ctx.fillText("0 to 8 weeks  ·  power-law fade  ·  gone 6–7 weeks", 20, 44);
+  }
+
   function drawColorBar(ctx, x, y, w, h, maxP) {
     const g = ctx.createLinearGradient(0, y + h, 0, y);
     g.addColorStop(0, "rgb(40, 130, 140)");
@@ -558,5 +716,5 @@ const Draw3D = (() => {
     ctx.restore();
   }
 
-  return { drawGlobe, drawForce, geodesicMm };
+  return { drawGlobe, drawForce, drawPlannerChart, geodesicMm };
 })();

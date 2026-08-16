@@ -105,6 +105,17 @@ h1 {
   margin-top: 20px;
 }
 
+.planner-card {
+  grid-column: 1 / -1;
+}
+
+.planner-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 12px 0 16px;
+}
+
 .card {
   background: var(--paper);
   border: 1px solid var(--line);
@@ -216,6 +227,63 @@ input[type="range"] {
   border-color: var(--teal-deep);
 }
 
+.switch-row {
+  margin-bottom: 12px;
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.switch-track {
+  flex: none;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: #ddd4c6;
+  border: 1px solid var(--line);
+  position: relative;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.switch-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(27, 36, 48, 0.18);
+  transition: transform 0.15s ease;
+}
+
+.switch input:checked + .switch-track {
+  background: var(--teal);
+  border-color: var(--teal);
+}
+
+.switch input:checked + .switch-track::after {
+  transform: translateX(18px);
+}
+
+.switch input:focus-visible + .switch-track {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
 .live-note {
   margin: 4px 0 0;
   color: var(--muted);
@@ -242,11 +310,13 @@ canvas {
   height: auto;
 }
 
-#globe {
+#globe,
+#plannerGlobe {
   cursor: grab;
 }
 
-#globe:active {
+#globe:active,
+#plannerGlobe:active {
   cursor: grabbing;
 }
 
@@ -280,9 +350,27 @@ canvas {
   margin-top: 4px;
 }
 
-.metric .sub {
-  color: var(--muted);
-  font-size: 0.82rem;
+.metric.ok {
+  background: #e7f4ec;
+  border-color: #b7d4c3;
+  color: var(--ok);
+}
+
+.metric.danger {
+  background: #f8e4e4;
+  border-color: #e0b8b8;
+  color: var(--danger);
+}
+
+.metric.ok .sub,
+.metric.danger .sub {
+  color: inherit;
+  opacity: 0.78;
+}
+
+.metric .value.long {
+  font-size: 1.05rem;
+  line-height: 1.25;
 }
 
 .alerts {
@@ -349,6 +437,44 @@ button.secondary {
   font-weight: 650;
 }
 
+.details-body {
+  margin-top: 12px;
+  max-width: 52rem;
+}
+
+.details-body h3 {
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 1.35em 0 0.45em;
+}
+
+.details-body h4 {
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin: 1em 0 0.3em;
+}
+
+.details-body p {
+  margin: 0.35em 0 0.65em;
+}
+
+.details-body ol,
+.details-body ul {
+  margin: 0.2em 0 0.8em 1.25em;
+  padding: 0;
+}
+
+.details-body li {
+  margin: 0.28em 0;
+}
+
+.details-body li ul,
+.details-body li ol {
+  margin: 0.2em 0 0.35em 1.1em;
+}
+
 footer {
   margin-top: 22px;
   color: var(--muted);
@@ -358,6 +484,7 @@ footer {
 @media (max-width: 980px) {
   .param-sections,
   .outputs,
+  .planner-grid,
   .row.two,
   .metrics {
     grid-template-columns: 1fr;

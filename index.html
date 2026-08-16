@@ -26,6 +26,8 @@
             Place a retinal break on an Atchison ellipsoid with Model 2 tilt,
             set fill and head pose, and see whether gas covers the break.
             A second view shows hydrostatic force, with the macula always in frame.
+            The bubble planner steps that fill through eight weeks of expansion
+            and absorption.
           </p>
         </div>
         <div class="badge">Educational model · not a medical device</div>
@@ -39,13 +41,10 @@
               <label><input type="radio" name="eye" value="OD" checked /> OD</label>
               <label><input type="radio" name="eye" value="OS" /> OS</label>
             </div>
-            <p class="live-note" id="eyeHint"></p>
             <div class="pills">
               <label><input type="radio" name="lens" value="phakic" checked /> Phakic</label>
               <label><input type="radio" name="lens" value="pseudo" /> Pseudophakic</label>
             </div>
-            <p class="live-note" id="lensHint"></p>
-            <p class="live-note" id="tiltAnatomyHint"></p>
             <div class="row" id="axialRow">
               <label for="axial">Axial length <span class="hint" id="axialHint"></span></label>
               <input id="axial" name="axial" type="range" min="22.3" max="28.5" step="0.1" value="24" />
@@ -58,16 +57,43 @@
               <label for="equatorMm">Break from equator <span class="hint" id="equatorHint"></span></label>
               <input id="equatorMm" name="equatorMm" type="range" min="-8" max="16" step="0.05" value="0" />
             </div>
+            <div class="row switch-row">
+              <label class="switch" for="macularHole">
+                <span>Macular hole <span class="hint" id="macularHoleHint"></span></span>
+                <input id="macularHole" name="macularHole" type="checkbox" value="on" />
+                <span class="switch-track" aria-hidden="true"></span>
+              </label>
+            </div>
+            <div class="row">
+              <label for="buckle">Circumferential buckle <span class="hint" id="buckleHint"></span></label>
+              <select id="buckle" name="buckle">
+                <option value="none" selected>None</option>
+                <option value="41">41 band (3.5 × 0.75 mm)</option>
+                <option value="42">42 band (4.0 × 1.25 mm)</option>
+              </select>
+            </div>
+            <div class="row" id="buckleCenterRow" hidden>
+              <label for="buckleCenter">Band centered at</label>
+              <select id="buckleCenter" name="buckleCenter">
+                <option value="vb" selected>Vitreous base</option>
+                <option value="equator">Geometric equator</option>
+                <option value="break">Retinal break</option>
+              </select>
+            </div>
           </fieldset>
 
           <fieldset>
             <legend>Tamponade</legend>
             <div class="pills" id="tamponadePills">
-              <label><input type="radio" name="tamponade" value="sf6" checked /> SF₆ 20%</label>
-              <label><input type="radio" name="tamponade" value="c3f8" /> C₃F₈ 14%</label>
+              <label><input type="radio" name="tamponade" value="sf6" checked /> SF₆</label>
+              <label><input type="radio" name="tamponade" value="c3f8" /> C₃F₈</label>
               <label><input type="radio" name="tamponade" value="air" /> Air</label>
               <label><input type="radio" name="tamponade" value="so1000" /> Silicone oil 1000</label>
               <label><input type="radio" name="tamponade" value="so5000" /> Silicone oil 5000</label>
+            </div>
+            <div class="row" id="gasPctRow">
+              <label for="gasPct">Gas concentration <span class="hint" id="gasPctHint"></span></label>
+              <input id="gasPct" name="gasPct" type="range" min="10" max="100" step="1" value="20" />
             </div>
             <p class="live-note">Cavity fluid <span class="hint" id="cavityFluidHint"></span></p>
             <div class="pills" id="cavityFluidPills">
@@ -76,10 +102,9 @@
               <label><input type="radio" name="cavityFluid" value="bss" /> BSS</label>
             </div>
             <div class="row">
-              <label for="tamponadeVol">Tamponade volume <span class="hint" id="fillHint"></span></label>
+              <label for="tamponadeVol">Day 0 occupying volume <span class="hint" id="fillHint"></span></label>
               <input id="tamponadeVol" name="tamponadeVol" type="range" min="0.02" max="4.5" step="0.02" value="2.25" />
             </div>
-            <p class="live-note" id="tamponadeNote"></p>
             <p class="live-note" id="bondNote"></p>
           </fieldset>
 
@@ -93,11 +118,6 @@
               <label for="tiltLR">Left / right tilt <span class="hint" id="tiltHint"></span></label>
               <input id="tiltLR" name="tiltLR" type="range" min="-90" max="90" step="1" value="0" />
             </div>
-            <p class="live-note">
-              Slider left is face-down (0°, fovea at the zenith). Center is sitting
-              (90°, 12 o’clock up). Right is supine (180°, cornea at the zenith).
-              Tilt goes to 90°; positive is left ear down.
-            </p>
           </fieldset>
         </div>
       </form>
@@ -120,6 +140,24 @@
           <div class="metrics" id="forceMetrics"></div>
           <div class="alerts" id="forceAlert"></div>
         </section>
+
+        <section class="card results-card planner-card" aria-live="polite">
+          <h2>3. Bubble planner</h2>
+          <div class="row">
+            <label for="plannerDays">Weeks after surgery <span class="hint" id="plannerTimeHint"></span></label>
+            <input id="plannerDays" name="plannerDays" type="range" min="0" max="56" step="0.5" value="0" />
+          </div>
+          <div class="planner-grid">
+            <div class="eye-wrap">
+              <canvas id="plannerGlobe" width="720" height="560" aria-label="Gas bubble size at the selected postoperative day"></canvas>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="plannerChart" width="720" height="560" aria-label="Occupying volume versus time from surgery through eight weeks"></canvas>
+            </div>
+          </div>
+          <div class="metrics" id="plannerMetrics"></div>
+          <div class="alerts" id="plannerAlert"></div>
+        </section>
       </div>
 
       <div class="actions">
@@ -129,47 +167,182 @@
 
       <details class="details">
         <summary>How this model is calculated</summary>
-        <p>
-          The vitreous cavity is an Atchison (2006) retinal ellipsoid with
-          Model 2 tilt: 11.5° temporal about the vertical, 3.6° down about
-          the horizontal, and the ellipsoid center 0.5 mm nasal and 0.2 mm
-          inferior of the fovea. The lens stays on the visual axis. The
-          cavity is clipped in front by a Navarro posterior lens if phakic
-          (R = 6 mm, Q = −1) or by a planar cap at the lens equator if
-          pseudophakic. That opening sits ~2 mm anterior of the Atchison
-          posterior-lens vertex; the phakic capsule dents from there into
-          the vitreous. Axial length sets spectacle refraction as
-          SR = (AL − 23.58) / (−0.299) D, then the ellipsoid semi-axes
-          Rx, Ry, Rz and vitreous depth.           Occupying volume is the given mL
-          (no Boyle / IOP). The bubble is axisymmetric about gravity and
-          sits at the zenith. A Young–Laplace meridian is integrated along
-          the real cavity wall (retina θ, and a second solve with lens/IOL θ
-          where the interface meets the capsule or IOL). Gas–liquid σ and
-          retina θ come from the cavity fluid: vitreous ~61 mN/m and 39°,
-          aqueous ~65 mN/m and 30°, BSS ~72 mN/m and 30°. Lens θ is 50°
-          phakic and 55° on an IOL (oil on lens 30°). Tamponade is contact
-          if the break sits on the gas side of that meniscus. Force on
-          gas-contact retina is ΔP = σ κ₀ + Δρ g (z − z_apex); it is zero
-          on the fluid side.
-        </p>
-        <p>
-          Silicone oil uses the same cavity and YL solver with σ ≈ 32–40 mN/m
-          (lower in vitreous than BSS), Δρ ≈ 30 kg/m³, and a 25° Young angle,
-          so it stays rounded. 1000 cs and 5000 cs differ mainly in viscosity;
-          the static shape is almost the same. The macula is a 2.75 mm-radius
-          disk around the fovea. Clock hours are as you face the eye, like a
-          clock: 12 up, 3 right (patient-left), 9 left (patient-right). The
-          macula is at the back of the globe. The optic disc is 4.5 mm nasal
-          to the fovea (toward 3 o’clock in OD, toward 9 o’clock in OS). Vascular
-          arcades leave the disc and pass 4 mm above and below the fovea.
-          The purple ring is the equator (17.5 mm nasal and 18.75 mm temporal
-          from the anterior pole at 24 mm AL, +0.16 mm per mm AL).
-          Clock hours are drawn on the equator. The pars plana ring is 4.3 mm
-          nasal and 5.9 mm temporal from the lens/IOL cap at 24 mm AL, changing
-          by 0.7 mm per millimetre of axial length. The vitreous base is a
-          single line 2.5 mm posterior to that pars plana ring. The default
-          tear sits on the vitreous-base line.
-        </p>
+        <div class="details-body">
+          <p>
+            This is a static teaching model of intraocular gas or oil after
+            vitrectomy. It answers three questions: does the agent contact a
+            chosen retinal break and the fovea; what hydrostatic force it
+            applies; and how occupying volume, and therefore contact, change
+            over eight weeks. It is not a medical device, does not store
+            patient data, and should not be used to choose treatment or
+            positioning for a real eye.
+          </p>
+
+          <h3>1. Coordinates and how to read the pictures</h3>
+          <ol>
+            <li>Origin is on the visual axis. +X is the patient’s left, +Y is superior, +Z is anterior. The fovea is posterior on the visual axis.</li>
+            <li>Clock hours are as you face the eye: 12 up, 3 to your right (patient-left), 9 to your left (patient-right). The optic disc is nasal of the fovea (toward 3 o’clock in OD, toward 9 o’clock in OS).</li>
+            <li>Views 1 and 3 keep anatomy fixed in that frame (12 o’clock up, macula behind). Face-down and tilt move the bubble to the gravitational high point; they do not roll the globe on the screen. Caption: “anatomy fixed · bubble follows pose.” You can still drag to rotate the camera. View 2 (force) stays a posterior macula view.</li>
+            <li>Head pose: 0° face-down puts the fovea at the zenith; 90° is sitting (12 o’clock at the zenith); 180° is supine (cornea at the zenith). The default slider is sitting. Positive left/right tilt is left ear down, zenith toward the patient’s right retina.</li>
+          </ol>
+
+          <h3>2. Shape of the vitreous cavity</h3>
+          <h4>Retinal ellipsoid</h4>
+          <ol>
+            <li>The wall is an Atchison (2006) Model 1 ellipsoid whose semi-axes change with spectacle refraction, plus Model 2 tilt and decentration (Atchison, Pritchard, Schmid, IOVS 2005).</li>
+            <li>Axial length AL (limited to 22.3–28.5 mm) sets refraction as SR = (AL − 23.58) / (−0.299) D, then Rx, Ry, Rz and vitreous depth from the published intercepts and slopes (Rx₀ 11.455 mm, Ry₀ 11.365 mm, Rz₀ 10.148 mm, vitreous depth 16.28 mm, with the listed mm per dioptre).</li>
+            <li>Tilt is 11.5° temporal about the vertical and 3.6° about the horizontal. The ellipsoid center is 0.5 mm nasal and 0.2 mm inferior of the fovea. The lens stays on the visual axis. IOVS 2005 sign convention: +θy puts the vertex nasal of the center; +θx puts it above the center. OS mirrors the nasal decentration and yaw.</li>
+          </ol>
+          <h4>Anterior opening</h4>
+          <ol>
+            <li>Phakic: Navarro (1985) posterior lens, vitreous side, R = 6 mm, Q = −1, so sag = ρ² / (2R), aperture radius 5 mm. The capsule is drawn as a dent; the bubble does not follow that sag.</li>
+            <li>Pseudophakic: a planar cap at the lens equator. That opening sits about 2 mm anterior of the Atchison posterior-lens vertex.</li>
+            <li>Cavity millilitres are a 36 × 36 × 48 voxel integral of the true clipped ellipsoid, including buckle indent and (for the volume total) the phakic capsule sag. Occupying millilitres on views 1–2 are the day-0 fill you set. There is no Boyle’s law and no IOP.</li>
+          </ol>
+
+          <h3>3. Landmarks</h3>
+          <ul>
+            <li>Macula: 2.75 mm-radius disk around the fovea (clinical macular disk). Distances along the wall (macula, disc, arcades, break-from-equator) are geodesics on a sphere of radius Rmean = (Rx + Ry + Rz) / 3, then projected onto the ellipsoid.</li>
+            <li>Optional macular hole: 0.4 mm radius at the fovea. Tamponade of the hole is gas contact at the fovea, whether or not the switch is on; the planner always reports MH closure from that test.</li>
+            <li>Optic disc: 4.5 mm nasal of the fovea, radius 0.75 mm.</li>
+            <li>Vascular arcades: leave the disc and pass 4 mm above and below the fovea.</li>
+            <li>Purple ring: geometric equator, the ellipsoid cut by the visual-axis plane z = 0. Break-from-equator = 0 is that ring. Clock hours are drawn on it.</li>
+            <li>Pars plana ring: 4.3 mm nasal and 5.9 mm temporal from the lens/IOL cap at 24 mm AL, changing 0.7 mm per millimetre of axial length (teaching ciliary-body distances).</li>
+            <li>Vitreous base: one line 2.5 mm posterior to that pars plana ring. The default tear sits on that line.</li>
+          </ul>
+
+          <h3>4. Where the bubble sits</h3>
+          <ol>
+            <li>Gravity is a unit vector from face-down and left/right tilt.</li>
+            <li>The bubble axis is gravity through the highest point of the ellipsoid (the gravitational support point), not the visual-axis origin. Sitting, nasal and temporal contact heights therefore match despite Atchison tilt. Face-down, the apex is slightly off the fovea because of that tilt and decentration.</li>
+            <li>The interface is a single axisymmetric Young–Laplace surface about that axis. One bubble; no coalescence of multiple bubbles.</li>
+          </ol>
+
+          <h3>5. What the tamponade is made of</h3>
+          <h4>Gas–liquid surface</h4>
+          <ol>
+            <li>Air, SF₆, and C₃F₈ share one σ and one Young angle θ (through the liquid). Density, and therefore Δρ, still differs by mix.</li>
+            <li>σ and θ come from the cavity fluid, not the gas species:
+              <ul>
+                <li>Vitreous: σ ≈ 61 mN/m. Ross, Blake and Ayyala (J Glaucoma 2010) measured rabbit vitreous 60.6 ± 2.6 mN/m; Soós and colleagues (PLoS ONE 2020) measured porcine vitreous 61.16 ± 1.30 mN/m. Young angle θ ≈ 39° through the liquid is from gas-coverage CFD of the three-phase contact line, not a measured human retina angle.</li>
+                <li>Aqueous: σ ≈ 65 mN/m (Ross rabbit aqueous 65.9 ± 1.2; human cataract aqueous 66.19 ± 2.64), θ ≈ 30°. We keep Ross’s human/rabbit aqueous rather than the lower porcine aqueous in Soós 2020 (~55 mN/m).</li>
+                <li>BSS: σ ≈ 72 mN/m (Ross 70.7; Soós 72.62), θ ≈ 30°.</li>
+              </ul>
+            </li>
+            <li>The same Young angle is applied on retina, capsule, and IOL. That is a modeling choice so the contact line is one problem, not three materials.</li>
+            <li>Mix density is ρ = f ρ_pure + (1 − f) ρ_air, with ρ_air = 1.2 kg/m³, ρ_SF₆ ≈ 6.2 kg/m³, ρ_C₃F₈ ≈ 8.2 kg/m³. Δρ = 1000 − ρ. Isoexpansile defaults are SF₆ 20% and C₃F₈ 14% (Peters, Abrams and colleagues, AJO 1985, and usual surgical tables; Chang, Lincoff and colleagues, Ophthalmology 1985).</li>
+          </ol>
+          <h4>Silicone oil</h4>
+          <ul>
+            <li>1000 cs and 5000 cs: density ≈ 970 and 973 kg/m³, so Δρ ≈ 30 kg/m³ (~3% less dense than water). σ ≈ 32–40 mN/m (lower in vitreous than BSS), θ ≈ 25°. The static shape is almost the same; viscosity is not in the snapshot. Oil volume does not change on the eight-week planner.</li>
+          </ul>
+          <h4>Bond number</h4>
+          <p>
+            Capillary length λ = √(σ / (Δρ g)). Bond number Bo = (bubble radius / λ)².
+            Bo &lt; 1: surface tension keeps the underside round. Bo &gt; 1: gravity and wall capillary flatten it.
+            Clinical gas fills are usually Bo ≫ 1, so the underside is nearly flat.
+          </p>
+
+          <h3>6. Young–Laplace meniscus (views 1 and 2, and each planner day)</h3>
+          <p>
+            The thought process is: solve a classic axisymmetric capillary problem on an equivalent sphere, then drop that surface into the Atchison cavity and slide it until the millilitres match. That is cheaper and more stable than integrating Young–Laplace on the tilted ellipsoid itself.
+          </p>
+          <ol>
+            <li>The equivalent sphere has radius Rmean. The meridian satisfies σ κ = ΔP₀ + Δρ g z (Bashforth–Adams / Young–Laplace), with a horizontal apex that is the lowest point of the gas–fluid interface. Mean curvature κ is integrated with RK4. ΔP₀ is shot so the curve meets the axis with small residual (flat underside on axis).</li>
+            <li>The Young angle is applied on that sphere, not re-solved on the true Atchison wall. The same θ is used on retina, capsule, and IOL so there is one contact-line problem.</li>
+            <li>That meridian is then shifted along gravity until a 24 × 24 × 32 voxel count inside the true cavity equals the occupying millilitres (binary search on the shift).</li>
+            <li>For drawing, the surface is revolved about gravity through the gravitational apex and clipped to the unbuckled ellipsoid plus the planar lens/IOL opening. It does not hug the phakic capsule dent, the optic-rim pinch, or buckle fillets. Those kinks are drawn on the globe but are not carved into the contact line.</li>
+            <li>A point is on the gas side if it is in the cavity and above that interface (along gravity), with a 0.05 mm tolerance. Near-complete fills (≳ 99.5%) are treated as full.</li>
+            <li>Bond number Bo = (r_b / λ)², with r_b the equivalent spherical radius of the occupying volume and λ = √(σ / (Δρ g)). Flattening in the results panel is 1 − (height / diameter) of that spherical-problem bubble.</li>
+          </ol>
+
+          <h3>7. Tamponade of the break and fovea</h3>
+          <ol>
+            <li>The break is tamponaded if it lies in the cavity and on the gas side of the meniscus. That is contact, not “enough force.”</li>
+            <li>A tear on a buckle crest or in a buckle gutter is tamponaded by the same test. The thought process is that there is little fluid exchange in the gutter once gas is over it.</li>
+            <li>The fovea (MH closure) uses the same in-gas test. The planner reports “MH is tamponaded until day X” from that, even if the macular-hole switch is off.</li>
+            <li>Day X is found by binary search on the 0.5-day volume curve, re-running a coverage-only simulate at each candidate millilitre. If the site is never covered at peak volume: not tamponaded with this fill and pose. If an expansile mix covers only after it grows: from day A until day B. Oil that stays covered: through eight weeks. Gas is treated as gone when occupying volume falls below 0.02 mL.</li>
+          </ol>
+
+          <h3>8. Hydrostatic force on the retina</h3>
+          <ol>
+            <li>On gas-contact retina, ΔP = σ κ₀ + Δρ g (z − z_apex). On the fluid side, ΔP = 0. Force is highest at the gravitational apex and falls to the meniscus.</li>
+            <li>The force map samples the posterior retina; the macula disk is always drawn.</li>
+            <li>Superior/inferior macular pressure: ΔP is compared at points ~70% of the way from fovea to the macular rim, superior vs inferior. Red if superior ΔP exceeds inferior by more than 0.02 mmHg and there is real superior macular force — the bubble is pressing downward across the macula (typical sitting, 12 o’clock zenith). Green if there is no macular force, or only nasal/temporal force (face-down puts the peak on the fovea, so superior ≈ inferior).</li>
+            <li>Macula protected: fovea on the gas side. Break protected: break on the gas side.</li>
+            <li>Steamroll fluid egress is green only if the macula is covered and the break is uncovered, so subretinal fluid can leave through the break rather than being rolled into the fovea. Otherwise it is no.</li>
+          </ol>
+
+          <h3>9. Encircling buckle</h3>
+          <ul>
+            <li>Optional 360° solid silicone: Mira / FCI style 41 (3.5 × 0.75 mm) or 42 (4.0 × 1.25 mm).</li>
+            <li>Indent is a rectangular trough of that width and thickness, with a short cosine roll at each edge. No extra cinch.</li>
+            <li>Center: posterior vitreous base (default), geometric equator, or the retinal break.</li>
+          </ul>
+
+          <h3>10. Bubble planner: expansion</h3>
+          <ol>
+            <li>Day-0 occupying millilitres are the fill on views 1–2. Mixes at or below isoexpansile (SF₆ 20%, C₃F₈ 14%) do not net-expand.</li>
+            <li>Above isoexpansile, expansion interpolates linearly in concentration from ×1 at the isoexpansile % to the pure-gas maximum: 100% SF₆ ≈ 2× by 1.5 days, 100% C₃F₈ ≈ 4× by 3.5 days (usual teaching; Chang / Lincoff expansion times 24–48 h SF₆, 72–96 h C₃F₈). The rise is a cosine smoothstep, s = ½ (1 − cos(π t / tPeak)), from surgery to that peak.</li>
+            <li>Volume is clipped at the cavity. A pressure spike from overfill is not modeled.</li>
+          </ol>
+
+          <h3>11. Bubble planner: how volume falls</h3>
+          <p>
+            The time course is a teaching fit, not a first-principles diffusion solve. The thought process, in order:
+          </p>
+          <ol>
+            <li>Thompson (Arch Ophthalmol 1989) fitted first-order (exponential) volume decay after vitrectomy: air half-life 1.6 d phakic / 0.9 d aphakic; 20% SF₆ 2.8 / 2.4 d; 10% C₃F₈ 5.7 phakic / 4.5 aphakic / 4.3 pseudophakic. Wong and Thompson (Ophthalmology 1988) had already shown meniscus-height volume estimates and first-order kinetics in rabbits, faster after vitrectomy.</li>
+            <li>Thompson (Arch Ophthalmol 1992, n = 206) showed C₃F₈ half-life rising with concentration: air 1.3 d, 5% 4.2 d, 10% 6.5 d, 15% 8.0 d, 20% 12.5 d. Lincoff, Maisel and Lincoff (Arch Ophthalmol 1984) found exponential decay whose rate did not depend on injected volume in rabbits; human half-lives were 3–5× longer.</li>
+            <li>Those fitted 8-day half-lives for ~14–16% C₃F₈ would put 50% of starting millilitres at about one week and only a few percent at one month. Serial measurements do not look like that. Thompson (IOVS 1997 abstract, n = 102 macular-hole PPV, 16% C₃F₈): 90% at day 1–2, 60% at day 15, 11% at day 42. Jacobs, Twomey and Leaver (Eye 1988): 12–16% C₃F₈ showed very little decline in the first two weeks. Choi, Hong, Yun and Kim (Sci Rep 2020, 14% vs 20% C₃F₈ after PPV): UWF gas–fluid area ratio 0.71 at day 10 and 0.27 at four weeks for 14% (0.83 and 0.45 for 20%). Han, Abrams, Bennett and Williams (Retina 1993): mean longevity 6.7 weeks for 12% C₃F₈ and 8.4 weeks for 20%.</li>
+            <li>So the planner does not use raw Thompson half-lives as the volume curve. It uses a power-law fade that hits zero in finite time: V(t) = Vpeak · (1 − (t − tPeak) / T)^1.18. For a full phakic 14% C₃F₈ fill, T ≈ 49 days: about one-third remaining at one month, still ~10% at six weeks, gone at about seven weeks. That matches the serial “still large at two weeks, about a third at one month, gone by 7–8 weeks” picture better than an exponential tail (which never quite reaches zero) or a late crash (which emptied the last 18% in a few days).</li>
+            <li>Relative duration across mix and lens still follows the shape of the Thompson tables (higher % lasts longer; pseudophakic faster, using the 1989 4.3 / 5.7 ratio). Air is gone at about 7 days phakic / 4 days pseudo; 20% SF₆ at about 16 / 14 days; 20% C₃F₈ runs to about eight weeks. Smaller starting fills use T · (Vpeak / cavity)^0.08, so a half fill of 14% C₃F₈ is gone around 6.5 weeks and a 1 mL fill around 6 weeks — shorter, but not half the time of a full fill (Lincoff’s volume-independence, applied gently).</li>
+            <li>Oil does not absorb on this eight-week scale.</li>
+          </ol>
+
+          <h3>12. What is left out on purpose</h3>
+          <ul>
+            <li>IOP, Boyle’s law, altitude, sclerotomy leak, and aqueous turnover as a diffusion PDE.</li>
+            <li>Multiple bubbles, residual vitreous, and time-varying composition inside the bubble (N₂ influx is only implicit in the expansion table).</li>
+            <li>Chorioretinal adhesion, laser vs cryo, and whether contact is “enough” tamponade.</li>
+            <li>The power-law T and exponent 1.18 are a teaching curve calibrated to the papers above, not a fitted regression on a new series.</li>
+            <li>Young angle is imposed on an equivalent sphere (Rmean), not on the true tilted ellipsoid; geodesics also use that Rmean.</li>
+            <li>Pars plana / vitreous-base distances are teaching anatomy (4.3 mm nasal and 5.9 mm temporal from the lens cap at 24 mm AL, 2.5 mm further for the posterior vitreous base), not a single MRI series.</li>
+          </ul>
+
+          <h3>13. Sources</h3>
+          <h4>Globe and lens</h4>
+          <ul>
+            <li>Atchison DA, Pritchard N, Schmid KL, Scott DH, Jones CE, Pope JM. Shape of the retinal surface in emmetropia and myopia. Invest Ophthalmol Vis Sci. 2005;46:2698–2707. MRI ellipsoids; tilt and decentration used as Model 2.</li>
+            <li>Atchison DA. Optical models for human myopic eyes. Vision Res. 2006;46:2236–2250. Model 1 sizes: Rx = 11.455 − 0.043 SR, Ry = 11.365 − 0.090 SR, Rz = 10.148 − 0.163 SR (mm, SR in dioptres); AL and vitreous depth vs SR.</li>
+            <li>Navarro R, Santamaría J, Bescós J. Accommodation-dependent model of the human eye with aspherics. J Opt Soc Am A. 1985;2:1273–1281. Posterior lens R = 6 mm, Q = −1.</li>
+          </ul>
+          <h4>Interface physics</h4>
+          <ul>
+            <li>Ross A, Blake RC 2nd, Ayyala RS. Surface tension of aqueous humor. J Glaucoma. 2010;19:456–459. Rabbit vitreous 60.6, aqueous 65.9, BSS 70.7 mN/m; human cataract aqueous 66.19 mN/m.</li>
+            <li>Soós J, Resch MD, Berkó S, Kovács A, Katona G, Facskó A, et al. Comparison of hydrophilic ophthalmic media on silicone oil emulsification. PLoS ONE. 2020;15:e0235067. Porcine vitreous 61.16, BSS 72.62 mN/m; lower oil–vitreous interfacial tension than oil–BSS.</li>
+            <li>Young–Laplace / Bashforth–Adams axisymmetric capillary equation; Bond number Bo = (r / λ)² with λ = √(σ / (Δρ g)).</li>
+          </ul>
+          <h4>Expansion, isoexpansile mix, and duration</h4>
+          <ul>
+            <li>Peters MA, Abrams GW, Hamilton LH, Burke JM, Schrieber TM. The nonexpansile, equilibrated concentration of perfluoropropane gas in the eye. Am J Ophthalmol. 1985;100:831–839.</li>
+            <li>Chang S, Lincoff HA, Coleman DJ, Fuchs W, Farber ME. Perfluorocarbon gases in vitreous surgery. Ophthalmology. 1985;92:651–656. Expansion ratios and times.</li>
+            <li>Lincoff H, Mardirossian J, Lincoff A, et al. Intravitreal longevity of three perfluorocarbon gases. Arch Ophthalmol. 1980;98:1610–1611.</li>
+            <li>Lincoff H, Coleman J, Kreissig I, Richard G, Chang S, Wilcox LM. The perfluorocarbon gases in the treatment of retinal detachment. Ophthalmology. 1983;90:546–551.</li>
+            <li>Lincoff H, Maisel JM, Lincoff A. Intravitreal disappearance rates of four perfluorocarbon gases. Arch Ophthalmol. 1984;102:928–929. Exponential decay; rate independent of injected volume in rabbits; human half-lives longer than rabbit.</li>
+            <li>Wong RF, Thompson JT. Prediction of the kinetics of disappearance of sulfur hexafluoride and perfluoropropane intraocular gas bubbles. Ophthalmology. 1988;95:609–613. Meniscus-height volume estimates.</li>
+            <li>Thompson JT. Kinetics of intraocular gases: disappearance of air, sulfur hexafluoride, and perfluoropropane after pars plana vitrectomy. Arch Ophthalmol. 1989;107:687–691. Air 1.6 / 0.9 d; 20% SF₆ 2.8 / 2.4 d; 10% C₃F₈ 5.7 / 4.5 / 4.3 d (phakic / aphakic / pseudophakic).</li>
+            <li>Thompson JT. The absorption of mixtures of air and perfluoropropane after pars plana vitrectomy. Arch Ophthalmol. 1992;110:1594–1597. n = 206; half-life vs mix 0–20% C₃F₈. Used here only for relative mix/lens scaling, not as the volume-vs-time curve.</li>
+            <li>Thompson JT. Absorption kinetics of intraocular 16% perfluoropropane gas mixtures in macular hole surgery. Invest Ophthalmol Vis Sci. 1997;38:S668. Serial means: 90% d1–2, 60% d15, 11% d42 (fitted t½ 7.24 d disagrees with the early serial means).</li>
+            <li>Jacobs P, Twomey JM, Leaver PK. Behaviour of intraocular gases. Eye. 1988;2:660–663. 12–16% C₃F₈ little decline in the first two weeks.</li>
+            <li>Han DP, Abrams GW, Bennett SR, Williams DF. Perfluoropropane 12% versus 20%. Retina. 1993;13:301–306. Mean longevity 6.7 vs 8.4 weeks.</li>
+            <li>Choi M, Hong S, Yun C, Kim SW. Objective analysis of perfluoropropane tamponade area after pars plana vitrectomy using ultra-widefield fundus stereographic projection images. Sci Rep. 2020;10:18268. 14% vs 20% C₃F₈: UWF area ratio 0.71 vs 0.83 at 10 d; 0.27 vs 0.45 at 4 weeks.</li>
+          </ul>
+          <h4>Buckle hardware</h4>
+          <ul>
+            <li>Mira / FCI listings for solid silicone encircling bands 41 (3.5 × 0.75 mm) and 42 (4.0 × 1.25 mm).</li>
+          </ul>
+        </div>
       </details>
 
       <footer>
