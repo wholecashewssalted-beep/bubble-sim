@@ -313,11 +313,21 @@ canvas {
 #globe,
 #plannerGlobe {
   cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 #globe:active,
 #plannerGlobe:active {
   cursor: grabbing;
+}
+
+.eye-wrap:has(#globe),
+.planner-grid .eye-wrap {
+  touch-action: none;
+  overscroll-behavior: contain;
 }
 
 .metrics {

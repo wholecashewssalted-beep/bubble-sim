@@ -25,6 +25,8 @@ const DEFAULTS = {
 
 const view = { yaw: 0, pitch: 0 };
 const plannerView = { yaw: 0, pitch: 0 };
+let lastGlobeModel = null;
+let lastPlannerModel = null;
 let lastTamponadeId = "sf6";
 
 function isStaleBreakDefault(value) {
@@ -317,6 +319,7 @@ function tamponadeUntilSentence(label, span, oil) {
 function render() {
   const params = readParams();
   const model = BubbleModel.simulate(params);
+  lastGlobeModel = model;
   renderHints(model);
   Draw3D.drawGlobe(globeCanvas, model, view);
   Draw3D.drawForce(forceCanvas, model);
@@ -336,6 +339,7 @@ function render() {
     tamponadeMl: at.phase === "gone" ? 0 : at.ml,
     fillPct: at.phase === "gone" ? 0 : at.fillPct,
   });
+  lastPlannerModel = plannerModel;
   Draw3D.drawGlobe(plannerGlobeCanvas, plannerModel, plannerView);
   Draw3D.drawPlannerChart(plannerChartCanvas, curve, params.plannerDays, params.cavityMl);
 
@@ -588,37 +592,75 @@ document.getElementById("copyLink").addEventListener("click", async () => {
   }
 });
 
-let drag = null;
-globeCanvas.addEventListener("pointerdown", (event) => {
-  drag = { x: event.clientX, y: event.clientY, yaw: view.yaw, pitch: view.pitch };
-  globeCanvas.setPointerCapture(event.pointerId);
-});
-globeCanvas.addEventListener("pointerup", () => {
-  drag = null;
-});
-globeCanvas.addEventListener("pointermove", (event) => {
-  if (!drag) return;
-  view.yaw = drag.yaw + (event.clientX - drag.x) * 0.01;
-  view.pitch = BubbleModel.clamp(drag.pitch + (event.clientY - drag.y) * 0.01, -1.2, 1.2);
-  render();
-});
+function bindOrbit(canvas, viewState, draw) {
+  if (!canvas) return;
+  let dragging = null;
+  let pointerId = null;
+  let raf = 0;
 
-let plannerDrag = null;
-if (plannerGlobeCanvas) {
-  plannerGlobeCanvas.addEventListener("pointerdown", (event) => {
-    plannerDrag = { x: event.clientX, y: event.clientY, yaw: plannerView.yaw, pitch: plannerView.pitch };
-    plannerGlobeCanvas.setPointerCapture(event.pointerId);
-  });
-  plannerGlobeCanvas.addEventListener("pointerup", () => {
-    plannerDrag = null;
-  });
-  plannerGlobeCanvas.addEventListener("pointermove", (event) => {
-    if (!plannerDrag) return;
-    plannerView.yaw = plannerDrag.yaw + (event.clientX - plannerDrag.x) * 0.01;
-    plannerView.pitch = BubbleModel.clamp(plannerDrag.pitch + (event.clientY - plannerDrag.y) * 0.01, -1.2, 1.2);
-    render();
-  });
+  const paint = () => {
+    raf = 0;
+    draw();
+  };
+
+  const onMove = (event) => {
+    if (!dragging || event.pointerId !== pointerId) return;
+    event.preventDefault();
+    const k = event.pointerType === "touch" ? 0.006 : 0.01;
+    viewState.yaw = dragging.yaw + (event.clientX - dragging.x) * k;
+    viewState.pitch = BubbleModel.clamp(
+      dragging.pitch + (event.clientY - dragging.y) * k,
+      -1.2,
+      1.2
+    );
+    if (!raf) raf = requestAnimationFrame(paint);
+  };
+
+  const endDrag = (event) => {
+    if (pointerId != null && event.pointerId !== pointerId) return;
+    dragging = null;
+    pointerId = null;
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", endDrag);
+    window.removeEventListener("pointercancel", endDrag);
+  };
+
+  canvas.addEventListener("pointerdown", (event) => {
+    if (!event.isPrimary) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
+    pointerId = event.pointerId;
+    dragging = {
+      x: event.clientX,
+      y: event.clientY,
+      yaw: viewState.yaw,
+      pitch: viewState.pitch,
+    };
+    if (event.pointerType === "touch") {
+      window.addEventListener("pointermove", onMove, { passive: false });
+      window.addEventListener("pointerup", endDrag);
+      window.addEventListener("pointercancel", endDrag);
+    } else {
+      try {
+        canvas.setPointerCapture(event.pointerId);
+      } catch (_) {
+        /* older Safari */
+      }
+    }
+  }, { passive: false });
+
+  canvas.addEventListener("pointermove", onMove, { passive: false });
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("lostpointercapture", endDrag);
 }
+
+bindOrbit(globeCanvas, view, () => {
+  if (lastGlobeModel) Draw3D.drawGlobe(globeCanvas, lastGlobeModel, view);
+});
+bindOrbit(plannerGlobeCanvas, plannerView, () => {
+  if (lastPlannerModel) Draw3D.drawGlobe(plannerGlobeCanvas, lastPlannerModel, plannerView);
+});
 
 loadQuery();
 {
