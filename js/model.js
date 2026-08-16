@@ -19,7 +19,7 @@ const MMHG_PER_MM_HEIGHT = (RHO_AQUEOUS * G_M_S2 * 0.001) / PA_PER_MMHG;
 /**
  * Shared static gas interface. Air, SF₆, and C₃F₈ use the same σ and θ.
  * Each gas keeps its own density, so Δρ = 1000 − ρ_gas differs slightly.
- * They also differ clinically in expansion and duration, which this snapshot omits.
+ * Expansion and duration are on the eight-week planner, not in this snapshot.
  *
  * 1. Cavity is an Atchison retinal ellipsoid clipped by a Navarro posterior
  *    lens (phakic) or a planar cap (pseudophakic). Occupying volume is the
@@ -33,30 +33,37 @@ const MMHG_PER_MM_HEIGHT = (RHO_AQUEOUS * G_M_S2 * 0.001) / PA_PER_MMHG;
  *    Gases are isoexpansile mixes (air 100%, SF₆ 20%, C₃F₈ 14%).
  *    Mixture density is ρ = f ρ_pure + (1−f) ρ_air; Δρ = 1000 − ρ.
  *    Concentration f is set in the UI (isoexpansile defaults: SF₆ 20%, C₃F₈ 14%).
- * 7. One gravity Young–Laplace solve at every fill: σ κ = ΔP₀ + Δρ g z
- *    with the same Young angle on retina, capsule, and IOL. The meridian
- *    is traced to the real cavity wall (not a sphere then clamped).
+ * 7. One gravity Young–Laplace solve on an equivalent sphere of radius Rmean,
+ *    then that surface is shifted and clipped onto the Atchison cavity.
+ *    Same θ on the sphere for retina, capsule, and IOL; we do not re-solve
+ *    a second Young condition on the lens. When the surface reaches the
+ *    anterior wall it stops on the true posterior capsule (Navarro sag) or
+ *    IOL plane, not a slice through the equator plane.
  * 8. Optional 360° encircling buckle (style 41 or 42). The indent is a
  *    rectangular trough of the band’s listed width and thickness, with a
  *    short roll at each edge. No extra cinch. The meniscus is a smooth
- *    Young–Laplace surface on the unbuckled ellipsoid and the planar lens
- *    opening; it does not follow the capsule sag or buckle fillets.
+ *    Young–Laplace surface on the unbuckled ellipsoid and the true lens
+ *    surface; it does not follow buckle fillets.
  *    A tear on the crest or in a buckle gutter is tamponaded if it is on
  *    the gas side of the meniscus (little exchange in the gutter). Center
  *    defaults to the posterior vitreous base, or can sit at the equator or
  *    on the retinal break.
- * 9. The YL meridian is shifted so voxel volume inside the clipped cavity
- *    matches the occupying mL.
+ * 9. Ordinary fills: the YL meridian is shifted so voxel volume inside the
+ *    true cavity matches the occupying mL. Tiny round drops (fill < 0.08
+ *    and Bo < 2.5) skip that match and pin the contact ring to the wall
+ *    at the gravitational high point; slider mL is the spherical-problem
+ *    target. Those drops also clip gas to the contact radius + 0.3 mm.
  * 10. Tamponade if the break is in the cavity and on the gas side of that meniscus.
  * 11. On gas-contact retina, ΔP = σ κ₀ + Δρ g (z − z_apex); else 0.
+ *     z_apex is the lowest point of the interface, not the retinal zenith.
  * 12. Bubble planner: occupying mL is day-0 volume. Mixes above isoexpansile
- *    expand (100% SF₆ ≈ 2×, 100% C₃F₈ ≈ 4×). After the peak, volume follows
- *    a power-law fade V = Vpeak · (1 − t/T)^p with p ≈ 1.18, so remaining
- *    millilitres hit zero in finite time (not an exponential tail). T is
- *    ~7 weeks for a full 14% C₃F₈ fill (~⅓ left at 1 month) and a little
- *    shorter for smaller starting fills (gone 6–7 weeks). Mix and lens
- *    still change T. Volume is clipped at the cavity; IOP is not modeled.
- *    Oil does not absorb here.
+ *    expand (100% SF₆ ≈ 2×, 100% C₃F₈ ≈ 4×); peak time also interpolates
+ *    from 0 at isoexpansile to tPeak100 at 100%. After the peak, volume
+ *    follows a power-law fade V = Vpeak · (1 − t/T)^p with p ≈ 1.18.
+ *    T is ~7 weeks for a full 14% C₃F₈ fill (~⅓ left at 1 month), clamped
+ *    32–56 d, and a little shorter for smaller starting fills (15% floor
+ *    on the size exponent). Mix and lens still change T. Volume is clipped
+ *    at the cavity; IOP is not modeled. Oil does not absorb here.
  */
 const GAS_MODEL = {
   kind: "gas",
@@ -187,13 +194,23 @@ function tamponadeProps(id, cavityFluidId, concPct) {
  * for a full 14% C₃F₈ phakic fill (~⅓ remaining at 1 month; Thompson 1997
  * 16% still ~60% at 2 weeks). Smaller starting fills use a slightly shorter
  * T so they are gone by 6–7 weeks. Relative T across mix and lens follows
- * the Thompson-shaped half-life table. Air ~7 d, SF₆ ~16 d phakic.
+ * a scaled copy of the Thompson mix/lens table, not the raw 1992 days.
+ * Air ~7 d, SF₆ ~16 d phakic. C₃F₈ T is clamped 32–56 d; the size
+ * exponent floors fill fraction at 0.15.
  */
 const PLANNER_MAX_DAYS = 56;
 const PLANNER_GONE_ML = 0.02;
 const ABSORB_POWER = 1.18;
 const C3F8_FULL_GONE_DAYS = 49;
 const ABSORB_SIZE_EXP = 0.08;
+/**
+ * Relative mix/lens weights, not published half-lives in days.
+ * C₃F₈ phakic is Thompson 1992’s shape (air, 5, 10, 15, 20%) scaled so
+ * T = 49 × (hl / hl_14%) then clamp 32–56. 1989 air 1.6 d is the 0%
+ * anchor; pseudophakic uses the 1989 4.3/5.7 ratio on the same shape.
+ * SF₆ and air tables keep Thompson 1989 numbers and scale T to 16 d
+ * (20% SF₆ phakic) and 7 d (air phakic).
+ */
 const GAS_KINETICS = {
   air: {
     id: "air",
@@ -542,6 +559,40 @@ function ellipsoidHitFromOrigin(cavity, dir) {
   return scale(u, t);
 }
 
+function rayEllipsoidHits(cavity, origin, dir) {
+  const u = normalize(dir);
+  const center = cavity.center || vec(0, 0, 0);
+  const a = rotateByAxesInv(u, cavity.tiltX || 0, cavity.tiltY || 0);
+  const b = rotateByAxesInv(sub(origin, center), cavity.tiltX || 0, cavity.tiltY || 0);
+  const invRx2 = 1 / (cavity.Rx * cavity.Rx);
+  const invRy2 = 1 / (cavity.Ry * cavity.Ry);
+  const invRz2 = 1 / (cavity.Rz * cavity.Rz);
+  const A = a.x * a.x * invRx2 + a.y * a.y * invRy2 + a.z * a.z * invRz2;
+  const B = 2 * (a.x * b.x * invRx2 + a.y * b.y * invRy2 + a.z * b.z * invRz2);
+  const C = b.x * b.x * invRx2 + b.y * b.y * invRy2 + b.z * b.z * invRz2 - 1;
+  const disc = B * B - 4 * A * C;
+  if (!(A > 1e-18) || disc < 0) return [];
+  const s = Math.sqrt(disc);
+  const ts = [(-B - s) / (2 * A), (-B + s) / (2 * A)];
+  return ts.map((t) => applyBuckleToWallPoint(add(origin, scale(u, t)), cavity));
+}
+
+function shiftDropToWall(cavity, zenith, yl, axisOffset) {
+  const r = Math.max(yl.r || 0, 0);
+  const { u0 } = frameAroundZenith(zenith);
+  const origin = add(axisOffset, scale(u0, r));
+  const hits = rayEllipsoidHits(cavity, origin, zenith);
+  if (!hits.length) {
+    return dot(gravitationalApex(cavity, zenith), zenith) - (yl.z || 0);
+  }
+  let zWall = dot(hits[0], zenith);
+  for (let i = 1; i < hits.length; i += 1) {
+    const z = dot(hits[i], zenith);
+    if (z > zWall) zWall = z;
+  }
+  return zWall - (yl.z || 0);
+}
+
 function buckleCenterEquatorMm(cavity, eye, clockHour) {
   const center = cavity.buckle && cavity.buckle.center;
   if (center === "equator") return 0;
@@ -577,10 +628,20 @@ function applyBuckleToWallPoint(p, cavity) {
   return scale(p, Math.max(L - h, 0.5) / L);
 }
 
-/** Meniscus wall: unbuckled ellipsoid plus the planar lens/IOL opening (no capsule sag). */
+/** Meniscus wall: unbuckled ellipsoid plus the true posterior capsule / IOL (no buckle fillets). */
 function inCavitySmooth(p, cavity) {
   if (!inEllipsoid(p, cavity)) return false;
-  return p.z <= lensOpeningZ(cavity) + 0.02;
+  return posteriorToLens(p, cavity);
+}
+
+function isLensContact(p, cavity) {
+  if (!inEllipsoid(p, cavity)) return false;
+  return p.z >= lensZ(cavity, p.x, p.y) - 0.35;
+}
+
+function snapToLensIfHit(p, cavity) {
+  if (!isLensContact(p, cavity)) return p;
+  return vec(p.x, p.y, lensZ(cavity, p.x, p.y));
 }
 
 /** Hit the retinal wall (ellipsoid, then buckle indent) from the visual-axis origin. */
@@ -1774,15 +1835,39 @@ function wallAwareSpoke(path, zShift, cavity, zenith, uHat, axisOffset) {
     }
   }
   if (hit >= world.length) {
+    const last = world[world.length - 1];
+    const z = (path.length ? path[path.length - 1].z : 0) + zShift;
+    const r0 = path.length ? path[path.length - 1].r : 0;
+    const rMax = Math.max(cavity.Rx, cavity.Ry, cavity.Rz) + 4;
+    let lo = r0;
+    let hi = rMax;
+    if (inCavitySmooth(bubbleWorldPoint(zenith, axisOffset, uHat, z, hi), cavity)) {
+      return {
+        world,
+        contact: last,
+        onLens: false,
+        hit: world.length,
+      };
+    }
+    for (let n = 0; n < 16; n += 1) {
+      const mid = 0.5 * (lo + hi);
+      if (inCavitySmooth(bubbleWorldPoint(zenith, axisOffset, uHat, z, mid), cavity)) lo = mid;
+      else hi = mid;
+    }
+    const contact = snapToLensIfHit(
+      bubbleWorldPoint(zenith, axisOffset, uHat, z, 0.5 * (lo + hi)),
+      cavity
+    );
     return {
-      world,
-      contact: world[world.length - 1],
-      onLens: false,
+      world: world.concat([contact]),
+      contact,
+      onLens: isLensContact(contact, cavity),
       hit: world.length,
     };
   }
   if (hit === 0) {
-    return { world: [world[0]], contact: world[0], onLens: true, hit: 0 };
+    const contact = snapToLensIfHit(world[0], cavity);
+    return { world: [contact], contact, onLens: isLensContact(contact, cavity), hit: 0 };
   }
   const a = world[hit - 1];
   const b = world[hit];
@@ -1794,9 +1879,13 @@ function wallAwareSpoke(path, zShift, cavity, zenith, uHat, axisOffset) {
     if (inCavitySmooth(mid, cavity)) lo = t;
     else hi = t;
   }
-  const contact = add(a, scale(sub(b, a), 0.5 * (lo + hi)));
-  const onLens = Math.abs(contact.z - lensOpeningZ(cavity)) < 0.35;
-  return { world, contact, onLens, hit };
+  const contact = snapToLensIfHit(add(a, scale(sub(b, a), 0.5 * (lo + hi))), cavity);
+  return {
+    world: world.slice(0, hit).concat([contact]),
+    contact,
+    onLens: isLensContact(contact, cavity),
+    hit,
+  };
 }
 
 function ringsFromSpokes(spokes) {
@@ -1847,7 +1936,20 @@ function simulate(params, options) {
   const samples = cavitySamples(cavity);
   const yl = solveYoungLaplace(radiusMm, fill, fluid, tamponadeMl * 1000);
   const zOfR = meniscusZFn(yl);
-  const zShift = yl.full ? 0 : shiftMeniscusToVolume(cavity, zenith, yl, tamponadeMl, samples, axisOffset);
+  const zShiftVol = yl.full ? 0 : shiftMeniscusToVolume(cavity, zenith, yl, tamponadeMl, samples, axisOffset);
+  const pinDrop = fill < 0.08 && (yl.bond || 0) < 2.5;
+  const zShift = yl.full ? 0 : (pinDrop ? shiftDropToWall(cavity, zenith, yl, axisOffset) : zShiftVol);
+  const clipToDrop = pinDrop;
+  const mesh = (fill >= 0.995 || yl.full)
+    ? { rings: [], contacts: [], meridian: [] }
+    : buildWallAwareRings(yl.path || [], zShift, cavity, zenith, axisOffset, pinDrop ? 56 : 32);
+  let rClip = Math.max(yl.r || 0, 0.2);
+  if (mesh.contacts) {
+    for (let i = 0; i < mesh.contacts.length; i += 1) {
+      const rc = radiusFromBubbleAxis(mesh.contacts[i], zenith, axisOffset);
+      if (rc > rClip) rClip = rc;
+    }
+  }
   const vbEq = vitreousBasePostEquatorMm(cavity, eye, params.clockHour);
   const brk = Math.abs((params.equatorMm ?? vbEq) - vbEq) <= 0.2
     ? vitreousBasePostPointAtClock(cavity, eye, params.clockHour)
@@ -1855,8 +1957,9 @@ function simulate(params, options) {
   const inGas = (p) => {
     if (!inCavity(p, cavity)) return false;
     if (fill >= 0.995 || yl.full) return true;
-    const z = dot(p, zenith);
     const r = radiusFromBubbleAxis(p, zenith, axisOffset);
+    if (clipToDrop && r > rClip + 0.3) return false;
+    const z = dot(p, zenith);
     return z >= zOfR(r) + zShift - 0.05;
   };
   const fovea = cavity.fovea;
@@ -1866,7 +1969,6 @@ function simulate(params, options) {
     return { tamponaded, macularHoleTamponaded: foveaCovered };
   }
   const path = (yl.path || []).map((p) => ({ ...p, z: p.z + zShift }));
-  const mesh = buildWallAwareRings(yl.path || [], zShift, cavity, zenith, axisOffset);
   const rings = mesh.rings;
   const zApex = (yl.zA || 0) + zShift;
   const betaContact = yl.beta;
@@ -1947,6 +2049,7 @@ function simulate(params, options) {
     radiusMm,
     cavity,
     fill,
+    tinyDrop: pinDrop,
     k: kFlat,
     capHeightMm: radiusMm - zApex,
     meniscusMm: zApex,

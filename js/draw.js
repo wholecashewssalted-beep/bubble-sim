@@ -244,8 +244,9 @@ const Draw3D = (() => {
     const yaw = view.yaw;
     const pitch = view.pitch;
     const proj = (p) => project(p, yaw, pitch, scalePx, cx, cy);
-    const nLat = cavity && cavity.buckle ? 48 : 22;
-    const nLon = cavity && cavity.buckle ? 56 : 36;
+    const tinyDrop = Boolean(model.tinyDrop);
+    const nLat = tinyDrop ? 64 : (cavity && cavity.buckle ? 48 : 22);
+    const nLon = tinyDrop ? 96 : (cavity && cavity.buckle ? 56 : 36);
     const inside = (p) => !cavity || BubbleModel.inCavity(p, cavity);
     const toWall = (p) => {
       const local = vec(p.x * Rx, p.y * Ry, p.z * Rz);
@@ -258,7 +259,9 @@ const Draw3D = (() => {
     const tris = sphereTriangles(1, nLat, nLon).map((tri) => {
       const mapped = tri.map(toWall);
       const mid = scale(add(add(mapped[0], mapped[1]), mapped[2]), 1 / 3);
-      const inGas = inside(mid) && model.inGas(mid);
+      const vertsIn = mapped.every((p) => inside(p) && model.inGas(p));
+      const midIn = inside(mid) && model.inGas(mid);
+      const inGas = tinyDrop ? vertsIn : midIn;
       const q = mapped.map(proj);
       const z = (q[0].z + q[1].z + q[2].z) / 3;
       return { q, z, inGas, mid, keep: inside(mid) };
@@ -291,7 +294,12 @@ const Draw3D = (() => {
       }
     }
     menTris.sort((a, b) => a.z - b.z);
-    menTris.forEach((t) => drawTriangle(ctx, t.q, "rgba(255, 252, 245, 0.22)", "rgba(15, 63, 64, 0.08)"));
+    const menFill = tinyDrop
+      ? (model.tamponade && model.tamponade.kind === "oil"
+        ? ["rgba(196, 154, 72, 0.48)", "rgba(120, 84, 28, 0.2)"]
+        : ["rgba(78, 168, 164, 0.48)", "rgba(26, 95, 95, 0.2)"])
+      : ["rgba(255, 252, 245, 0.22)", "rgba(15, 63, 64, 0.08)"];
+    menTris.forEach((t) => drawTriangle(ctx, t.q, menFill[0], menFill[1]));
 
     if (cavity && cavity.lensRings) {
       const lensTris = [];
@@ -325,7 +333,7 @@ const Draw3D = (() => {
       men.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
       ctx.closePath();
       ctx.strokeStyle = "rgba(15, 63, 64, 0.85)";
-      ctx.lineWidth = 2.2;
+      ctx.lineWidth = tinyDrop ? 1.6 : 2.2;
       ctx.stroke();
     }
 

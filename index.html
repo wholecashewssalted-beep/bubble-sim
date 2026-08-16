@@ -197,7 +197,7 @@
           </ol>
           <h4>Anterior opening</h4>
           <ol>
-            <li>Phakic: Navarro (1985) posterior lens, vitreous side, R = 6 mm, Q = −1, so sag = ρ² / (2R), aperture radius 5 mm. The capsule is drawn as a dent; the bubble does not follow that sag.</li>
+            <li>Phakic: Navarro (1985) posterior lens, vitreous side, R = 6 mm, Q = −1, so sag = ρ² / (2R), aperture radius 5 mm. The capsule is drawn as a dent. When the meniscus reaches it, contact sits on that posterior surface, not a slice through the equator plane.</li>
             <li>Pseudophakic: a planar cap at the lens equator. That opening sits about 2 mm anterior of the Atchison posterior-lens vertex.</li>
             <li>Cavity millilitres are a 36 × 36 × 48 voxel integral of the true clipped ellipsoid, including buckle indent and (for the volume total) the phakic capsule sag. Occupying millilitres on views 1–2 are the day-0 fill you set. There is no Boyle’s law and no IOP.</li>
           </ol>
@@ -247,14 +247,16 @@
 
           <h3>6. Young–Laplace meniscus (views 1 and 2, and each planner day)</h3>
           <p>
-            The thought process is: solve a classic axisymmetric capillary problem on an equivalent sphere, then drop that surface into the Atchison cavity and slide it until the millilitres match. That is cheaper and more stable than integrating Young–Laplace on the tilted ellipsoid itself.
+            The thought process is: solve a classic axisymmetric capillary problem on an equivalent sphere, then drop that surface into the Atchison cavity. Ordinary fills slide it until the millilitres match; tiny round drops pin the contact to the wall instead. That is cheaper and more stable than integrating Young–Laplace on the tilted ellipsoid itself.
           </p>
           <ol>
             <li>The equivalent sphere has radius Rmean. The meridian satisfies σ κ = ΔP₀ + Δρ g z (Bashforth–Adams / Young–Laplace), with a horizontal apex that is the lowest point of the gas–fluid interface. Mean curvature κ is integrated with RK4. ΔP₀ is shot so the curve meets the axis with small residual (flat underside on axis).</li>
-            <li>The Young angle is applied on that sphere, not re-solved on the true Atchison wall. The same θ is used on retina, capsule, and IOL so there is one contact-line problem.</li>
-            <li>That meridian is then shifted along gravity until a 24 × 24 × 32 voxel count inside the true cavity equals the occupying millilitres (binary search on the shift).</li>
-            <li>For drawing, the surface is revolved about gravity through the gravitational apex and clipped to the unbuckled ellipsoid plus the planar lens/IOL opening. It does not hug the phakic capsule dent, the optic-rim pinch, or buckle fillets. Those kinks are drawn on the globe but are not carved into the contact line.</li>
-            <li>A point is on the gas side if it is in the cavity and above that interface (along gravity), with a 0.05 mm tolerance. Near-complete fills (≳ 99.5%) are treated as full.</li>
+            <li>The Young angle is applied on that sphere, not re-solved on the true Atchison wall. The same θ is used on retina, capsule, and IOL so there is one contact-line problem. We do not shoot a second Young condition on the lens; when the spherical-problem surface reaches the anterior wall it stops on the true posterior capsule (phakic Navarro sag) or the IOL plane (pseudophakic).</li>
+            <li>For ordinary fills, that meridian is then shifted along gravity until a 24 × 24 × 32 voxel count inside the true cavity equals the occupying millilitres (binary search on the shift).</li>
+            <li>Tiny round drops (occupying fraction &lt; 0.08 and Bond number &lt; 2.5) skip that voxel match. The contact ring is pinned to the wall at the gravitational high point. The slider millilitres are the spherical-problem target, not a cavity voxel count.</li>
+            <li>For drawing, the surface is revolved about gravity through the gravitational apex and clipped to the unbuckled ellipsoid and the true anterior wall (Navarro posterior capsule if phakic, planar IOL if pseudophakic). It does not hug the optic-rim pinch or buckle fillets. Those kinks are drawn on the globe but are not carved into the contact line.</li>
+            <li>A point is on the gas side if it is in the true cavity (buckle indent and, when present, phakic capsule sag) and above that interface (along gravity), with a 0.05 mm tolerance. Near-complete fills (≳ 99.5%) are treated as full. The meniscus mesh uses the same unbuckled ellipsoid plus true lens surface, so a lens hit is on the capsule or IOL rather than a clip through the equator plane.</li>
+            <li>Those same tiny drops also clip gas radially: if the cylindrical radius from the bubble axis is more than the contact radius + 0.3 mm, the point is not gas, even if it is above the contact height. That stops tamponade from spreading past a small round meniscus.</li>
             <li>Bond number Bo = (r_b / λ)², with r_b the equivalent spherical radius of the occupying volume and λ = √(σ / (Δρ g)). Flattening in the results panel is 1 − (height / diameter) of that spherical-problem bubble.</li>
           </ol>
 
@@ -268,7 +270,8 @@
 
           <h3>8. Hydrostatic force on the retina</h3>
           <ol>
-            <li>On gas-contact retina, ΔP = σ κ₀ + Δρ g (z − z_apex). On the fluid side, ΔP = 0. Force is highest at the gravitational apex and falls to the meniscus.</li>
+            <li>On gas-contact retina, ΔP = σ κ₀ + Δρ g (z − z_apex). Here z is height along gravity and z_apex is the lowest point of the gas–fluid interface (the underside of the bubble), not the retinal zenith. On the fluid side, ΔP = 0. Force on gas-contact retina is therefore highest where the wall is highest (gravitational apex) and decreases as you move down the wall toward the meniscus.</li>
+            <li>At the contact line there is a pressure jump from liquid (0) to gas. For a large flat fill the underside is nearly level with the meniscus, so gas-side ΔP there is about the Laplace term only — “falls to the meniscus.” For a small round drop the underside sits below the wall contact, so the gas-side contact still carries Laplace plus the hydrostatic head of the drop. That is ordinary hydrostatics; the model does not zero the force at the contact ring.</li>
             <li>The force map samples the posterior retina; the macula disk is always drawn.</li>
             <li>Superior/inferior macular pressure: ΔP is compared at points ~70% of the way from fovea to the macular rim, superior vs inferior. Red if superior ΔP exceeds inferior by more than 0.02 mmHg and there is real superior macular force — the bubble is pressing downward across the macula (typical sitting, 12 o’clock zenith). Green if there is no macular force, or only nasal/temporal force (face-down puts the peak on the fovea, so superior ≈ inferior).</li>
             <li>Macula protected: fovea on the gas side. Break protected: break on the gas side.</li>
@@ -285,7 +288,7 @@
           <h3>10. Bubble planner: expansion</h3>
           <ol>
             <li>Day-0 occupying millilitres are the fill on views 1–2. Mixes at or below isoexpansile (SF₆ 20%, C₃F₈ 14%) do not net-expand.</li>
-            <li>Above isoexpansile, expansion interpolates linearly in concentration from ×1 at the isoexpansile % to the pure-gas maximum: 100% SF₆ ≈ 2× by 1.5 days, 100% C₃F₈ ≈ 4× by 3.5 days (usual teaching; Chang / Lincoff expansion times 24–48 h SF₆, 72–96 h C₃F₈). The rise is a cosine smoothstep, s = ½ (1 − cos(π t / tPeak)), from surgery to that peak.</li>
+            <li>Above isoexpansile, both the expansion ratio and the time of the peak interpolate linearly from the isoexpansile mix to 100%: E = 1 + (Emax − 1) × (c − c_iso)/(100 − c_iso), and tPeak = tPeak100 × (c − c_iso)/(100 − c_iso). So 100% SF₆ ≈ 2× at 1.5 days, 100% C₃F₈ ≈ 4× at 3.5 days; a mix only slightly above isoexpansile peaks earlier and expands less (usual teaching; Chang / Lincoff expansion times 24–48 h SF₆, 72–96 h C₃F₈). The rise is a cosine smoothstep, s = ½ (1 − cos(π t / tPeak)), from surgery to that peak.</li>
             <li>Volume is clipped at the cavity. A pressure spike from overfill is not modeled.</li>
           </ol>
 
@@ -295,10 +298,10 @@
           </p>
           <ol>
             <li>Thompson (Arch Ophthalmol 1989) fitted first-order (exponential) volume decay after vitrectomy: air half-life 1.6 d phakic / 0.9 d aphakic; 20% SF₆ 2.8 / 2.4 d; 10% C₃F₈ 5.7 phakic / 4.5 aphakic / 4.3 pseudophakic. Wong and Thompson (Ophthalmology 1988) had already shown meniscus-height volume estimates and first-order kinetics in rabbits, faster after vitrectomy.</li>
-            <li>Thompson (Arch Ophthalmol 1992, n = 206) showed C₃F₈ half-life rising with concentration: air 1.3 d, 5% 4.2 d, 10% 6.5 d, 15% 8.0 d, 20% 12.5 d. Lincoff, Maisel and Lincoff (Arch Ophthalmol 1984) found exponential decay whose rate did not depend on injected volume in rabbits; human half-lives were 3–5× longer.</li>
+            <li>Thompson (Arch Ophthalmol 1992, n = 206) showed C₃F₈ half-life rising with concentration: air 1.3 d, 5% 4.2 d, 10% 6.5 d, 15% 8.0 d, 20% 12.5 d. Those published days are not T and are not the volume curve. The code stores a scaled copy of that shape (phakic: 0% 1.6 from Thompson 1989 air, then 5% 10.3, 10% 16.0, 15% 19.7, 20% 26.0, held flat to 100%; pseudophakic uses the 1989 4.3 / 5.7 ratio on the same shape) and reads it only as a relative weight across mix and lens. Lincoff, Maisel and Lincoff (Arch Ophthalmol 1984) found exponential decay whose rate did not depend on injected volume in rabbits; human half-lives were 3–5× longer.</li>
             <li>Those fitted 8-day half-lives for ~14–16% C₃F₈ would put 50% of starting millilitres at about one week and only a few percent at one month. Serial measurements do not look like that. Thompson (IOVS 1997 abstract, n = 102 macular-hole PPV, 16% C₃F₈): 90% at day 1–2, 60% at day 15, 11% at day 42. Jacobs, Twomey and Leaver (Eye 1988): 12–16% C₃F₈ showed very little decline in the first two weeks. Choi, Hong, Yun and Kim (Sci Rep 2020, 14% vs 20% C₃F₈ after PPV): UWF gas–fluid area ratio 0.71 at day 10 and 0.27 at four weeks for 14% (0.83 and 0.45 for 20%). Han, Abrams, Bennett and Williams (Retina 1993): mean longevity 6.7 weeks for 12% C₃F₈ and 8.4 weeks for 20%.</li>
-            <li>So the planner does not use raw Thompson half-lives as the volume curve. It uses a power-law fade that hits zero in finite time: V(t) = Vpeak · (1 − (t − tPeak) / T)^1.18. For a full phakic 14% C₃F₈ fill, T ≈ 49 days: about one-third remaining at one month, still ~10% at six weeks, gone at about seven weeks. That matches the serial “still large at two weeks, about a third at one month, gone by 7–8 weeks” picture better than an exponential tail (which never quite reaches zero) or a late crash (which emptied the last 18% in a few days).</li>
-            <li>Relative duration across mix and lens still follows the shape of the Thompson tables (higher % lasts longer; pseudophakic faster, using the 1989 4.3 / 5.7 ratio). Air is gone at about 7 days phakic / 4 days pseudo; 20% SF₆ at about 16 / 14 days; 20% C₃F₈ runs to about eight weeks. Smaller starting fills use T · (Vpeak / cavity)^0.08, so a half fill of 14% C₃F₈ is gone around 6.5 weeks and a 1 mL fill around 6 weeks — shorter, but not half the time of a full fill (Lincoff’s volume-independence, applied gently).</li>
+            <li>So the planner does not use raw Thompson half-lives as the volume curve. It uses a power-law fade that hits zero in finite time: V(t) = Vpeak · (1 − (t − tPeak) / T)^1.18. For C₃F₈, T = 49 × (hl / hl at 14% phakic), then clamped to 32–56 days. A full phakic 14% fill is therefore gone at about 49 days: about one-third remaining at one month, still ~10% at six weeks. 5% C₃F₈ is held at the 32-day floor; 20% at the 56-day ceiling (the eight-week planner). SF₆ uses T = 16 × (hl / hl at 20% phakic); air uses T = 7 × (hl / hl_air). That matches the serial “still large at two weeks, about a third at one month, gone by 7–8 weeks” picture better than an exponential tail (which never quite reaches zero) or a late crash (which emptied the last 18% in a few days).</li>
+            <li>Smaller starting fills then scale that T by (Vpeak / cavity)^0.08, with the fill fraction floored at 0.15 so a tiny leftover does not empty in a day. A half fill of 14% C₃F₈ is gone around 6.5 weeks and a 1 mL fill around 6 weeks — shorter, but not half the time of a full fill (Lincoff’s volume-independence, applied gently).</li>
             <li>Oil does not absorb on this eight-week scale.</li>
           </ol>
 
@@ -308,7 +311,11 @@
             <li>Multiple bubbles, residual vitreous, and time-varying composition inside the bubble (N₂ influx is only implicit in the expansion table).</li>
             <li>Chorioretinal adhesion, laser vs cryo, and whether contact is “enough” tamponade.</li>
             <li>The power-law T and exponent 1.18 are a teaching curve calibrated to the papers above, not a fitted regression on a new series.</li>
-            <li>Young angle is imposed on an equivalent sphere (Rmean), not on the true tilted ellipsoid; geodesics also use that Rmean.</li>
+            <li>Young angle is imposed on an equivalent sphere (Rmean), not on the true tilted ellipsoid; geodesics also use that Rmean. Capsule and IOL use that same θ; we do not re-solve Young on those materials. The hit itself is on the true posterior capsule or IOL plane, not a clip through the equator plane.</li>
+            <li>Tiny fills (fraction &lt; 0.08 and Bo &lt; 2.5) pin the drop to the wall instead of matching cavity voxels, and clip gas to the contact radius + 0.3 mm.</li>
+            <li>Meniscus drawing uses the unbuckled ellipsoid plus the true lens surface (no buckle fillets). Gas tests and millilitre counts use the true cavity, including buckle indent.</li>
+            <li>z_apex in the force formula is the underside of the interface. Small round drops still have Laplace plus drop height at the contact ring.</li>
+            <li>Planner T uses a scaled Thompson-shaped table, a 32–56 day clamp for C₃F₈, and a 15% floor on the size exponent — not the raw 1992 half-lives as days to 50% volume.</li>
             <li>Pars plana / vitreous-base distances are teaching anatomy (4.3 mm nasal and 5.9 mm temporal from the lens cap at 24 mm AL, 2.5 mm further for the posterior vitreous base), not a single MRI series.</li>
           </ul>
 
