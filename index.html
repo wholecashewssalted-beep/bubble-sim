@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bubble Sim — tamponade and retinal force</title>
+    <meta
+      name="description"
+      content="3D model of an intraocular gas bubble: does it tamponade a retinal break, and what hydrostatic force does it apply to the macula?"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <div>
+          <p class="kicker">Vitreoretinal teaching tool</p>
+          <h1>Bubble tamponade and force</h1>
+          <p class="lede">
+            Place a retinal break on the sphere, set the tamponade fill and head tilt,
+            and see whether the bubble covers the break. A second view shows the
+            hydrostatic force on the retina, with the macula always in frame.
+          </p>
+        </div>
+        <div class="badge">Educational model · not a medical device</div>
+      </header>
+
+      <form class="card form-card" id="params" autocomplete="off">
+        <div class="param-sections">
+          <fieldset>
+            <legend>Anatomy</legend>
+            <div class="pills">
+              <label><input type="radio" name="eye" value="OD" checked /> OD</label>
+              <label><input type="radio" name="eye" value="OS" /> OS</label>
+            </div>
+            <p class="live-note" id="eyeHint"></p>
+            <div class="pills">
+              <label><input type="radio" name="sizeMode" value="volume" checked /> Vitreous volume</label>
+              <label><input type="radio" name="sizeMode" value="axial" /> Axial length</label>
+            </div>
+            <div class="row" id="volumeRow">
+              <label for="cavity">Vitreous volume <span class="hint" id="cavityHint"></span></label>
+              <input id="cavity" name="cavity" type="range" min="2.5" max="14" step="0.1" value="4.5" />
+            </div>
+            <div class="row" id="axialRow" hidden>
+              <label for="axial">Axial length <span class="hint" id="axialHint"></span></label>
+              <input id="axial" name="axial" type="range" min="20" max="32" step="0.1" value="24" />
+            </div>
+            <div class="row">
+              <label for="clockHour">Break clock hour <span class="hint" id="clockHint"></span></label>
+              <input id="clockHour" name="clockHour" type="range" min="0" max="12" step="0.25" value="12" />
+            </div>
+            <div class="row">
+              <label for="equatorMm">Break from equator toward fovea <span class="hint" id="equatorHint"></span></label>
+              <input id="equatorMm" name="equatorMm" type="range" min="0" max="16" step="0.25" value="3" />
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Tamponade</legend>
+            <div class="pills" id="tamponadePills">
+              <label><input type="radio" name="tamponade" value="sf6" checked /> SF₆ 20%</label>
+              <label><input type="radio" name="tamponade" value="c3f8" /> C₃F₈ 14%</label>
+              <label><input type="radio" name="tamponade" value="air" /> Air</label>
+              <label><input type="radio" name="tamponade" value="so1000" /> Silicone oil 1000</label>
+              <label><input type="radio" name="tamponade" value="so5000" /> Silicone oil 5000</label>
+            </div>
+            <p class="live-note">Cavity fluid <span class="hint" id="cavityFluidHint"></span></p>
+            <div class="pills" id="cavityFluidPills">
+              <label><input type="radio" name="cavityFluid" value="vitreous" checked /> Vitreous</label>
+              <label><input type="radio" name="cavityFluid" value="aqueous" /> Aqueous</label>
+              <label><input type="radio" name="cavityFluid" value="bss" /> BSS</label>
+            </div>
+            <div class="row">
+              <label for="tamponadeVol">Tamponade volume <span class="hint" id="fillHint"></span></label>
+              <input id="tamponadeVol" name="tamponadeVol" type="range" min="0.02" max="4.5" step="0.02" value="2.25" />
+            </div>
+            <p class="live-note" id="tamponadeNote"></p>
+            <p class="live-note" id="bondNote"></p>
+          </fieldset>
+
+          <fieldset>
+            <legend>Positioning</legend>
+            <div class="row">
+              <label for="faceDown">Face-down / supine <span class="hint" id="faceHint"></span></label>
+              <input id="faceDown" name="faceDown" type="range" min="0" max="180" step="1" value="90" />
+            </div>
+            <div class="row">
+              <label for="tiltLR">Left / right tilt <span class="hint" id="tiltHint"></span></label>
+              <input id="tiltLR" name="tiltLR" type="range" min="-90" max="90" step="1" value="0" />
+            </div>
+            <p class="live-note">
+              Slider left is face-down (0°, fovea at the zenith). Center is sitting
+              (90°, 12 o’clock up). Right is supine (180°, cornea at the zenith).
+              Tilt goes to 90°; positive is left ear down.
+            </p>
+          </fieldset>
+        </div>
+      </form>
+
+      <div class="outputs">
+        <section class="card results-card" aria-live="polite">
+          <h2>1. Break tamponade</h2>
+          <div class="eye-wrap">
+            <canvas id="globe" width="720" height="560" aria-label="3D vitreous cavity with gas bubble and retinal break"></canvas>
+          </div>
+          <div class="metrics" id="tamponadeMetrics"></div>
+          <div class="alerts" id="tamponadeAlert"></div>
+        </section>
+
+        <section class="card results-card" aria-live="polite">
+          <h2>2. Retinal force</h2>
+          <div class="eye-wrap">
+            <canvas id="force" width="720" height="640" aria-label="Hydrostatic force vectors on the posterior retina, macula, and retinal tear"></canvas>
+          </div>
+          <div class="metrics" id="forceMetrics"></div>
+          <div class="alerts" id="forceAlert"></div>
+        </section>
+      </div>
+
+      <div class="actions">
+        <button type="button" id="copyLink">Copy link to these settings</button>
+        <button type="button" class="secondary" id="reset">Reset example</button>
+      </div>
+
+      <details class="details">
+        <summary>How this model is calculated</summary>
+        <p>
+          The vitreous cavity is a sphere. Axial length, when chosen, sets volume
+          by V = (AL³ π / 6) · (0.76 + 0.012 (AL − 24)). Air, SF₆, and C₃F₈ share
+          one static gas model: occupying volume is the given mL (no Boyle / IOP
+          compression and no expansion over time); the bubble is axisymmetric
+          about gravity and sits at the zenith. One Young–Laplace solve with
+          gravity is used at every fill: σ κ = ΔP₀ + Δρ g z, with a Young angle
+          through the cavity liquid. Gas–liquid σ and θ come from that fluid:
+          vitreous ~61 mN/m and 39° (Ross 2010; PLOS 2020; air–retina CFD),
+          aqueous ~65 mN/m and 30°, BSS ~72 mN/m and 30°. Small Bond number
+          keeps the bubble round; large Bond number flattens the underside.
+          Gases are isoexpansile (air; 20% SF₆; 14% C₃F₈). Mixture density is
+          ρ = f ρ_pure + (1−f) ρ_air; Δρ = 1000 − ρ.
+          Tamponade is contact if the break’s polar angle from zenith is ≤ β.
+          Force on gas-contact retina is
+          ΔP = σ κ₀ + Δρ g (z − z_apex); it is zero on the fluid side.
+        </p>
+        <p>
+          Silicone oil uses the same cavity and YL solver with σ ≈ 32–40 mN/m
+          (lower in vitreous than BSS), Δρ ≈ 30 kg/m³, and a 25° Young angle,
+          so it stays rounded. 1000 cs and 5000 cs differ mainly in viscosity;
+          the static shape is almost the same. The macula is a 2.75 mm-radius
+          disk around the fovea. Clock hours are as you face the eye, like a
+          clock: 12 up, 3 right (patient-left), 9 left (patient-right). The
+          macula is at the back of the globe. The optic disc is 4.5 mm nasal
+          to the fovea (toward 3 o’clock in OD, toward 9 o’clock in OS). Vascular
+          arcades           leave the disc and pass 4 mm above and below the fovea. The ora serrata
+          is a circle on the sphere, tilted with the nerve: at 24 mm axial length
+          the nasal point is 17.5 mm from the anterior apex and the temporal
+          point is 18.75 mm; each millimetre of extra axial length adds 0.16 mm.
+          Four vortex ampullae sit 25 mm + 0.35×(AL − 24) from the anterior apex
+          in the ST, SN, IT, and IN quadrants, with that shift capped at ±1.3 mm
+          from the 24 mm eye.
+        </p>
+      </details>
+
+      <footer>
+        Bubble Sim does not store patient data and should not be used to make
+        treatment or positioning decisions.
+      </footer>
+    </main>
+    <script src="js/model.js"></script>
+    <script src="js/draw.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>
