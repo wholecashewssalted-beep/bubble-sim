@@ -7,8 +7,8 @@ const plannerDaysInput = document.getElementById("plannerDays");
 
 const DEFAULTS = {
   axial: "24",
-  tamponadeVol: "2.25",
-  clockHour: "12",
+  tamponadeVol: "0.02",
+  clockHour: "2",
   equatorMm: "3.1",
   faceDown: "90",
   tiltLR: "0",

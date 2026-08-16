@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Bubble Sim — tamponade and retinal force</title>
+    <title>VR Bubble Simulator</title>
     <meta
       name="description"
-      content="3D model of an intraocular gas bubble: does it tamponade a retinal break, and what hydrostatic force does it apply to the macula?"
+      content="A teaching tool for intraocular gas and oil dynamics. Atchison ellipsoid with Model 2 tilt; static Young–Laplace meniscus at a prescribed occupying volume (no Boyle/IOP); absorption is a teaching power-law, not a patient prediction."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -20,14 +20,14 @@
     <main class="page">
       <header class="hero">
         <div>
-          <p class="kicker">Vitreoretinal teaching tool</p>
-          <h1>Bubble tamponade and force</h1>
+          <h1>VR Bubble Simulator</h1>
           <p class="lede">
-            Place a retinal break on an Atchison ellipsoid with Model 2 tilt,
-            set fill and head pose, and see whether gas covers the break.
-            A second view shows hydrostatic force, with the macula always in frame.
-            The bubble planner steps that fill through eight weeks of expansion
-            and absorption.
+            A teaching tool to help trainees understand gas and oil dynamics
+            in the vitreous cavity. Geometry is an Atchison retinal ellipsoid
+            with Model 2 tilt; the agent is a static axisymmetric Young–Laplace
+            meniscus at a prescribed occupying volume (no Boyle’s law, IOP, or
+            N₂-diffusion PDE). Duration uses a calibrated power-law fade, not a
+            patient-specific prediction.
           </p>
         </div>
         <div class="badge">Educational model · not a medical device</div>
@@ -51,7 +51,7 @@
             </div>
             <div class="row">
               <label for="clockHour">Break clock hour <span class="hint" id="clockHint"></span></label>
-              <input id="clockHour" name="clockHour" type="range" min="0" max="12" step="0.25" value="12" />
+              <input id="clockHour" name="clockHour" type="range" min="0" max="12" step="0.25" value="2" />
             </div>
             <div class="row">
               <label for="equatorMm">Break from equator <span class="hint" id="equatorHint"></span></label>
@@ -103,7 +103,7 @@
             </div>
             <div class="row">
               <label for="tamponadeVol">Day 0 occupying volume <span class="hint" id="fillHint"></span></label>
-              <input id="tamponadeVol" name="tamponadeVol" type="range" min="0.02" max="4.5" step="0.02" value="2.25" />
+              <input id="tamponadeVol" name="tamponadeVol" type="range" min="0.02" max="4.5" step="0.02" value="0.02" />
             </div>
             <p class="live-note" id="bondNote"></p>
           </fieldset>
