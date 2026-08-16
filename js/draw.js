@@ -96,30 +96,57 @@ const Draw3D = (() => {
   function drawOraAndVortex(ctx, model, proj, colors) {
     const extra = model.extraLandmarks;
     if (!extra) return;
+    if (extra.ciliary && extra.ciliary.length > 1) {
+      drawPolyline(ctx, extra.ciliary.map(proj), colors.ciliary || "#8a5a2a", 2.2);
+    }
+    if (extra.vitreousBasePost && extra.vitreousBasePost.length > 1) {
+      ctx.setLineDash([3, 3]);
+      drawPolyline(ctx, extra.vitreousBasePost.map(proj), colors.base || "#6a7a3a", 1.8);
+      ctx.setLineDash([]);
+    }
     if (extra.ora && extra.ora.length > 1) {
       ctx.setLineDash([5, 4]);
       drawPolyline(ctx, extra.ora.map(proj), colors.ora, 2);
       ctx.setLineDash([]);
-      const nasal = proj(extra.nasalPt);
-      ctx.fillStyle = colors.ora;
-      ctx.font = "600 11px Figtree, sans-serif";
-      ctx.fillText("ora", nasal.x + 6, nasal.y - 6);
+      if (extra.nasalPt) {
+        const nasal = proj(extra.nasalPt);
+        ctx.fillStyle = colors.ora;
+        ctx.font = "600 11px Figtree, sans-serif";
+        ctx.fillText("equator", nasal.x + 6, nasal.y - 6);
+      }
     }
-    extra.vortex.forEach((v) => {
-      const ring = v.ring.map(proj);
-      ctx.beginPath();
-      ring.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-      ctx.closePath();
-      ctx.fillStyle = colors.vortexFill;
-      ctx.fill();
-      ctx.strokeStyle = colors.vortexStroke;
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
-      const p = proj(v.p);
-      ctx.fillStyle = colors.vortexStroke;
-      ctx.font = "600 10px Figtree, sans-serif";
-      ctx.fillText(v.id, p.x + 7, p.y - 5);
-    });
+    if (extra.vitreousBasePost && extra.vitreousBasePost.length) {
+      const vb = proj(extra.vitreousBasePost[Math.floor(extra.vitreousBasePost.length * 0.28)]);
+      ctx.fillStyle = colors.base || "#6a7a3a";
+      ctx.font = "600 11px Figtree, sans-serif";
+      ctx.fillText("vitreous base", vb.x + 6, vb.y + 12);
+    }
+    if (extra.ciliary && extra.ciliary.length) {
+      const cb = proj(extra.ciliary[Math.floor(extra.ciliary.length * 0.12)]);
+      ctx.fillStyle = colors.ciliary || "#8a5a2a";
+      ctx.font = "600 11px Figtree, sans-serif";
+      ctx.fillText("pars plana", cb.x + 6, cb.y - 6);
+    }
+  }
+
+  function clockLabelPoint(model, hour) {
+    const cavity = model.cavity;
+    if (cavity && BubbleModel.oraPointAtClock) {
+      return BubbleModel.oraPointAtClock(cavity, model.eye, hour);
+    }
+    return BubbleModel.breakPosition(cavity || model.radiusMm, hour, 0);
+  }
+
+  function drawFoveaX(ctx, p, color, size = 5) {
+    ctx.beginPath();
+    ctx.moveTo(p.x - size, p.y - size);
+    ctx.lineTo(p.x + size, p.y + size);
+    ctx.moveTo(p.x + size, p.y - size);
+    ctx.lineTo(p.x - size, p.y + size);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = "round";
+    ctx.stroke();
   }
 
   function drawTearMarker(ctx, proj, model, options = {}) {
@@ -166,20 +193,30 @@ const Draw3D = (() => {
     ctx.fillRect(0, 0, w, h);
 
     const R = model.radiusMm;
-    const scalePx = Math.min(w, h) * 0.36 / R;
+    const cavity = model.cavity;
+    const Rx = cavity ? cavity.Rx : R;
+    const Ry = cavity ? cavity.Ry : R;
+    const Rz = cavity ? cavity.Rz : R;
+    const scalePx = Math.min(w, h) * 0.34 / Math.max(Rx, Ry, Rz);
     const cx = w * 0.5;
     const cy = h * 0.52;
     const yaw = view.yaw;
     const pitch = view.pitch;
     const proj = (p) => project(p, yaw, pitch, scalePx, cx, cy);
+    const inside = (p) => !cavity || BubbleModel.inCavity(p, cavity);
+    const toWall = (p) => {
+      const local = vec(p.x * Rx, p.y * Ry, p.z * Rz);
+      return cavity ? BubbleModel.worldFromLocal(local, cavity) : local;
+    };
 
-    const tris = sphereTriangles(R, 22, 36).map((tri) => {
-      const mid = scale(add(add(tri[0], tri[1]), tri[2]), 1 / 3);
-      const inGas = model.inGas(mid);
-      const q = tri.map(proj);
+    const tris = sphereTriangles(1, 22, 36).map((tri) => {
+      const mapped = tri.map(toWall);
+      const mid = scale(add(add(mapped[0], mapped[1]), mapped[2]), 1 / 3);
+      const inGas = inside(mid) && model.inGas(mid);
+      const q = mapped.map(proj);
       const z = (q[0].z + q[1].z + q[2].z) / 3;
-      return { q, z, inGas, mid };
-    });
+      return { q, z, inGas, mid, keep: inside(mid) };
+    }).filter((t) => t.keep);
     tris.sort((a, b) => a.z - b.z);
 
     const agentFill = model.tamponade && model.tamponade.kind === "oil"
@@ -189,17 +226,6 @@ const Draw3D = (() => {
       if (t.inGas) drawTriangle(ctx, t.q, agentFill[0], agentFill[1]);
       else drawTriangle(ctx, t.q, "rgba(232, 222, 204, 0.35)", "rgba(180, 166, 142, 0.18)");
     });
-
-    const eq = [];
-    for (let i = 0; i <= 64; i += 1) {
-      const t = (2 * Math.PI * i) / 64;
-      eq.push(proj(vec(R * Math.sin(t), R * Math.cos(t), 0)));
-    }
-    ctx.beginPath();
-    eq.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-    ctx.strokeStyle = "#5c4a32";
-    ctx.lineWidth = 1.8;
-    ctx.stroke();
 
     const rings = model.meniscus.rings || [];
     const menTris = [];
@@ -211,6 +237,8 @@ const Draw3D = (() => {
         const triA = [a[j], b[j], a[j2]];
         const triB = [b[j], b[j2], a[j2]];
         [triA, triB].forEach((tri) => {
+          const mid = scale(add(add(tri[0], tri[1]), tri[2]), 1 / 3);
+          if (cavity && !BubbleModel.inCavity(mid, cavity)) return;
           const q = tri.map(proj);
           menTris.push({ q, z: (q[0].z + q[1].z + q[2].z) / 3 });
         });
@@ -219,13 +247,41 @@ const Draw3D = (() => {
     menTris.sort((a, b) => a.z - b.z);
     menTris.forEach((t) => drawTriangle(ctx, t.q, "rgba(255, 252, 245, 0.22)", "rgba(15, 63, 64, 0.08)"));
 
+    if (cavity && cavity.lensRings) {
+      const lensTris = [];
+      const rings = cavity.lensRings;
+      for (let i = 0; i < rings.length - 1; i += 1) {
+        const a = rings[i];
+        const b = rings[i + 1];
+        for (let j = 0; j < a.length; j += 1) {
+          const j2 = (j + 1) % a.length;
+          [ [a[j], b[j], a[j2]], [b[j], b[j2], a[j2]] ].forEach((tri) => {
+            const mid = scale(add(add(tri[0], tri[1]), tri[2]), 1 / 3);
+            const q = tri.map(proj);
+            lensTris.push({ q, z: (q[0].z + q[1].z + q[2].z) / 3, inGas: model.inGas(mid) });
+          });
+        }
+      }
+      lensTris.sort((a, b) => a.z - b.z);
+      const lensFill = cavity.lens === "pseudo"
+        ? ["rgba(210, 220, 230, 0.45)", "rgba(80, 100, 120, 0.25)"]
+        : ["rgba(230, 220, 190, 0.5)", "rgba(120, 100, 60, 0.28)"];
+      const lensGas = model.tamponade && model.tamponade.kind === "oil"
+        ? ["rgba(196, 154, 72, 0.42)", "rgba(120, 84, 28, 0.22)"]
+        : ["rgba(78, 168, 164, 0.42)", "rgba(26, 95, 95, 0.2)"];
+      lensTris.forEach((t) => drawTriangle(ctx, t.q, t.inGas ? lensGas[0] : lensFill[0], t.inGas ? lensGas[1] : lensFill[1]));
+      if (cavity.clipRing) drawPolyline(ctx, cavity.clipRing.map(proj), "#5c4a32", 2);
+    }
+
     const men = model.meniscus.points.map(proj);
-    ctx.beginPath();
-    men.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-    ctx.closePath();
-    ctx.strokeStyle = "rgba(15, 63, 64, 0.85)";
-    ctx.lineWidth = 2.2;
-    ctx.stroke();
+    if (men.length > 2) {
+      ctx.beginPath();
+      men.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      ctx.closePath();
+      ctx.strokeStyle = "rgba(15, 63, 64, 0.85)";
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
+    }
 
     if (model.meniscus.meridian && model.meniscus.meridian.length > 1 && rings.length > 1) {
       const mer = rings.map((ring) => ring[0]).map(proj);
@@ -257,16 +313,16 @@ const Draw3D = (() => {
     }
 
     const fovea = proj(model.fovea);
-    ctx.beginPath();
-    ctx.arc(fovea.x, fovea.y, 5, 0, Math.PI * 2);
+    drawFoveaX(ctx, fovea, "#8d4b2b", 5);
     ctx.fillStyle = "#8d4b2b";
-    ctx.fill();
+    ctx.font = "600 11px Figtree, sans-serif";
+    ctx.fillText("fovea", fovea.x + 8, fovea.y - 8);
 
     drawFundus(ctx, model, proj, { vessels: "#9b2c2c", disc: "#c4a36a", discStroke: "#6b4a24" });
     drawOraAndVortex(ctx, model, proj, {
       ora: "#6b4a8a",
-      vortexFill: "rgba(92, 40, 70, 0.85)",
-      vortexStroke: "#4a1838",
+      base: "#6a7a3a",
+      ciliary: "#8a5a2a",
     });
 
     const mac = model.maculaRing.map(proj);
@@ -295,7 +351,7 @@ const Draw3D = (() => {
     drawTearMarker(ctx, proj, model);
 
     for (const hour of [12, 3, 6, 9]) {
-      const p = proj(BubbleModel.breakPosition(R, hour, 0));
+      const p = proj(clockLabelPoint(model, hour));
       ctx.fillStyle = "#3d3226";
       ctx.font = "600 14px Figtree, sans-serif";
       ctx.fillText(String(hour), p.x + 6, p.y - 6);
@@ -306,7 +362,7 @@ const Draw3D = (() => {
     ctx.fillText(model.tamponaded ? "Break is tamponaded" : "Break is not tamponaded", 20, 32);
     ctx.fillStyle = "#5d6a78";
     ctx.font = "500 13px Figtree, sans-serif";
-    ctx.fillText(`Drag to rotate  ·  ${model.eye}  ·  facing the eye  ·  12 up  ·  3 right  ·  9 left  ·  macula behind  ·  ${model.eye === "OS" ? "OS disc toward 9" : "OD disc toward 3"}`, 20, h - 18);
+    ctx.fillText(`Drag to rotate  ·  ${model.eye}  ·  ${cavity && cavity.lens === "pseudo" ? "pseudophakic plane" : "phakic Navarro lens"}  ·  Atchison tilt  ·  12 up`, 20, h - 18);
   }
 
   function drawForce(canvas, model) {
@@ -318,8 +374,12 @@ const Draw3D = (() => {
     ctx.fillRect(0, 0, w, h);
 
     const R = model.radiusMm;
+    const cavity = model.cavity;
+    const Rx = cavity ? cavity.Rx : R;
+    const Ry = cavity ? cavity.Ry : R;
+    const Rz = cavity ? cavity.Rz : R;
     const mapH = h * 0.72;
-    const scalePx = Math.min(w, mapH) * 0.42 / R;
+    const scalePx = Math.min(w, mapH) * 0.42 / Math.max(Rx, Ry);
     const cx = w * 0.5;
     const cy = mapH * 0.52;
     const yaw = 0;
@@ -334,7 +394,14 @@ const Draw3D = (() => {
       const lat = (Math.PI / 2) * (i / nLat);
       const az = (2 * Math.PI * j) / nLon;
       const c = Math.cos(lat);
-      return vec(R * c * Math.sin(az), R * c * Math.cos(az), -R * Math.sin(lat));
+      const dir = vec(c * Math.sin(az), c * Math.cos(az), -Math.sin(lat));
+      if (!cavity) return vec(R * dir.x, R * dir.y, R * dir.z);
+      return BubbleModel.ellipsoidPointFromDirection
+        ? BubbleModel.ellipsoidPointFromDirection(cavity, dir)
+        : (() => {
+          const q = (dir.x * dir.x) / (Rx * Rx) + (dir.y * dir.y) / (Ry * Ry) + (dir.z * dir.z) / (Rz * Rz);
+          return scale(dir, 1 / Math.sqrt(Math.max(q, 1e-12)));
+        })();
     };
     for (let i = 0; i < nLat; i += 1) {
       for (let j = 0; j < nLon; j += 1) {
@@ -368,15 +435,15 @@ const Draw3D = (() => {
     ctx.lineWidth = 2.2;
     ctx.stroke();
     const fovea = proj(model.fovea);
-    ctx.beginPath();
-    ctx.arc(fovea.x, fovea.y, 4, 0, Math.PI * 2);
+    drawFoveaX(ctx, fovea, "#1b2430", 5);
     ctx.fillStyle = "#1b2430";
-    ctx.fill();
+    ctx.font = "600 11px Figtree, sans-serif";
+    ctx.fillText("fovea", fovea.x + 8, fovea.y - 8);
     drawFundus(ctx, model, proj, { vessels: "#7a1f1f", disc: "#d7b56a", discStroke: "#4a3318" });
     drawOraAndVortex(ctx, model, proj, {
       ora: "#5a3a7a",
-      vortexFill: "rgba(92, 40, 70, 0.9)",
-      vortexStroke: "#3a1028",
+      base: "#6a7a3a",
+      ciliary: "#8a5a2a",
     });
 
     const arrowScale = (R * 0.55) / maxP;
@@ -386,7 +453,10 @@ const Draw3D = (() => {
       for (let j = 0; j < count; j += 1) {
         const az = (2 * Math.PI * j) / count + 0.1;
         const c = Math.cos(lat);
-        const p = vec(R * c * Math.sin(az), R * c * Math.cos(az), -R * Math.sin(lat));
+        const dir = vec(c * Math.sin(az), c * Math.cos(az), -Math.sin(lat));
+        const p = cavity
+          ? BubbleModel.ellipsoidPointFromDirection(cavity, dir)
+          : scale(dir, R);
         const pressure = model.pressureAt(p);
         if (pressure <= 0.01) continue;
         const n = normalize(p);
@@ -413,7 +483,7 @@ const Draw3D = (() => {
     drawTearMarker(ctx, proj, model, { label: true });
 
     for (const hour of [12, 3, 6, 9]) {
-      const p = proj(BubbleModel.breakPosition(R, hour, 0));
+      const p = proj(clockLabelPoint(model, hour));
       ctx.fillStyle = "#3d3226";
       ctx.font = "600 13px Figtree, sans-serif";
       ctx.fillText(String(hour), p.x + 6, p.y - 6);
