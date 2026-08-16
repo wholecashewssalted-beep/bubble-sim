@@ -304,6 +304,10 @@ input[type="range"] {
   padding: 12px;
 }
 
+.eye-dock {
+  min-height: 0;
+}
+
 canvas {
   display: block;
   width: 100%;
@@ -503,5 +507,27 @@ footer {
   .hero {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .eye-wrap.is-pinned {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    z-index: 40;
+    margin: 0;
+    max-height: min(42vh, 280px);
+    overflow: hidden;
+    box-shadow: 0 10px 36px rgba(27, 36, 48, 0.2);
+  }
+
+  .eye-wrap.is-pinned canvas {
+    max-height: calc(min(42vh, 280px) - 24px);
+  }
+
+  body.has-globe-pin {
+    padding-bottom: calc(var(--globe-pin-h, 0px) + 12px);
   }
 }

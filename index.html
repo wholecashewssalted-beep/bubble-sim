@@ -125,8 +125,10 @@
       <div class="outputs">
         <section class="card results-card" aria-live="polite">
           <h2>1. Break tamponade</h2>
-          <div class="eye-wrap">
-            <canvas id="globe" width="720" height="560" draggable="false" aria-label="3D vitreous cavity with gas bubble and retinal break"></canvas>
+          <div class="eye-dock" id="globeDock">
+            <div class="eye-wrap" id="globeWrap">
+              <canvas id="globe" width="720" height="560" draggable="false" aria-label="3D vitreous cavity with gas bubble and retinal break"></canvas>
+            </div>
           </div>
           <div class="metrics" id="tamponadeMetrics"></div>
           <div class="alerts" id="tamponadeAlert"></div>

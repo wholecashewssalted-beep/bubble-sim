@@ -507,6 +507,7 @@ function render() {
   document.getElementById("forceAlert").innerHTML = forceAlert;
 
   writeQuery(params);
+  requestGlobePinSync();
 }
 
 function writeQuery(params) {
@@ -662,6 +663,62 @@ bindOrbit(plannerGlobeCanvas, plannerView, () => {
   if (lastPlannerModel) Draw3D.drawGlobe(plannerGlobeCanvas, lastPlannerModel, plannerView);
 });
 
+const globeDock = document.getElementById("globeDock");
+const globeWrap = document.getElementById("globeWrap");
+const pinMq = window.matchMedia("(max-width: 720px)");
+let globePinned = false;
+let pinHeight = 0;
+let pinRaf = 0;
+
+function unpinGlobe() {
+  globePinned = false;
+  pinHeight = 0;
+  if (globeWrap) globeWrap.classList.remove("is-pinned");
+  document.body.classList.remove("has-globe-pin");
+  if (globeDock) globeDock.style.minHeight = "";
+  document.documentElement.style.setProperty("--globe-pin-h", "0px");
+}
+
+function syncGlobePin() {
+  if (!globeDock || !globeWrap || !pinMq.matches) {
+    if (globePinned) unpinGlobe();
+    return;
+  }
+  const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+  const h = (globePinned && pinHeight) || globeWrap.getBoundingClientRect().height;
+  const dockTop = globeDock.getBoundingClientRect().top;
+  const slack = 10;
+  const shouldPin = globePinned
+    ? dockTop > vh - h - slack
+    : dockTop > vh - h + slack;
+  if (shouldPin) {
+    globePinned = true;
+    globeWrap.classList.add("is-pinned");
+    document.body.classList.add("has-globe-pin");
+    pinHeight = globeWrap.getBoundingClientRect().height;
+    globeDock.style.minHeight = `${pinHeight}px`;
+    document.documentElement.style.setProperty("--globe-pin-h", `${pinHeight}px`);
+  } else {
+    unpinGlobe();
+  }
+}
+
+function requestGlobePinSync() {
+  if (pinRaf) return;
+  pinRaf = requestAnimationFrame(() => {
+    pinRaf = 0;
+    syncGlobePin();
+  });
+}
+
+window.addEventListener("scroll", requestGlobePinSync, { passive: true });
+window.addEventListener("resize", requestGlobePinSync);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", requestGlobePinSync);
+  window.visualViewport.addEventListener("scroll", requestGlobePinSync);
+}
+pinMq.addEventListener("change", requestGlobePinSync);
+
 loadQuery();
 {
   const q = new URLSearchParams(location.search);
@@ -670,3 +727,4 @@ loadQuery();
   }
 }
 render();
+requestGlobePinSync();
